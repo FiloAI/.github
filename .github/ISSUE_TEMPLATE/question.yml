@@ -1,0 +1,22 @@
+name: Question
+description: 使用或集成方面的疑问。
+title: "question: "
+labels: [question]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: 你想完成什么
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: 已尝试的步骤
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      value: |
+        - 服务 / 版本或 commit：
+        - 环境（dev / prod）：

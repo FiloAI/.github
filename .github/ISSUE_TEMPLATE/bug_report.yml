@@ -1,0 +1,48 @@
+name: Bug report
+description: 服务 / 工具的缺陷报告。客户端问题请勿在此提，去 filoai-frontend。
+title: "bug: "
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述 / What happened
+      description: 一句话说清坏在哪里，然后补充细节。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: 按下面清单逐项填写，不确定的写「不确定」。
+      value: |
+        - 服务 / 版本或 commit：
+        - 环境（dev / prod）：
+        - 复现账号或请求 ID（如适用）：
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. ...
+        2. ...
+        期望：...
+        实际：...
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 怎么算修好？写成可验证的检查项（自动化处理链会依赖它）。
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 截图
+      description: 相关日志片段、监控链接或截图。注意脱敏。

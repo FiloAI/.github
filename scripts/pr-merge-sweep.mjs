@@ -25,12 +25,12 @@ const repoArgIdx = process.argv.indexOf('--repo')
 const ONLY_REPO = repoArgIdx > -1 ? process.argv[repoArgIdx + 1] : null
 
 // 仓库 → 允许 sweep 合并的 base 分支。
-// filo-www 的发布流程是双 PR 晋级（PR→dev 合并后再开等价 PR→prod，prod 即线上），
-// 所以它的 dev 与 prod PR 都在 sweep 范围内；产品两仓只收 dev。
+// 2026-08-05 晚起全组织 main-only：main 是唯一长期分支，正式版打 tag 发布
+//（服务器/官网 prod-v*，客户端 <platform>-v*）。历史 dev/prod 分支已冻结。
 const REPO_BASES = {
-  'FiloAI/filoai-frontend': ['dev'], // 客户端唯一仓
-  'FiloAI/FiloMailCenter': ['dev'], // 服务器唯一仓（2026-08-05 起含 apps/admin、services/doc-reader、services/agent）
-  'FiloAI/filo-www': ['dev', 'prod'], // 官网独立仓（2026-08-05 恢复；prod≠dev 是有意差异，暂不并仓）
+  'FiloAI/filoai-frontend': ['main'], // 客户端唯一仓
+  'FiloAI/FiloMailCenter': ['main'], // 服务器唯一仓（含 apps/admin、services/doc-reader、services/agent）
+  'FiloAI/filo-www': ['main'], // 官网独立仓
 }
 const REPOS = Object.keys(REPO_BASES)
 const MAX_MERGES_PER_REPO = 3

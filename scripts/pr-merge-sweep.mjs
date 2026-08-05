@@ -127,6 +127,9 @@ for (const repo of REPOS) {
     if (pr.isDraft) { skip('draft'); continue }
     if (!REPO_BASES[repo].includes(pr.baseRefName)) { skip(`base=${pr.baseRefName} 不在允许列表 [${REPO_BASES[repo]}]`); continue }
     if (pr.labels.some((l) => l.name === 'no-automerge')) { skip('no-automerge 标签'); continue }
+    // needs-human-review：终审 agent 判定需人工看护（产品方向偏差/功能大包）。
+    // Chris / bobo 看完移除标签即放行，下轮自动重新进入终审。
+    if (pr.labels.some((l) => l.name === 'needs-human-review')) { skip('needs-human-review 等人工放行'); continue }
     if (pr.mergeable === 'CONFLICTING') { skip('合并冲突'); continue }
     if (merged >= MAX_MERGES_PER_REPO) { skip('本轮配额已满'); continue }
 

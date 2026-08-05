@@ -154,6 +154,16 @@ for (const repo of REPOS) {
     if (unresolved > 0) { skip(`${unresolved} 个未解决 review thread`); continue }
 
     const method = isBot ? '--squash' : '--merge'
+    if (!DRY_RUN) {
+      // 第三方签核留痕：合并前以执行者身份 approve（作者是执行者本人时 GitHub
+      // 会拒绝 approve 自己的 PR——吞掉即可，bypass 合并不依赖这一步）。
+      try {
+        gh(['pr', 'review', String(pr.number), '--repo', repo, '--approve',
+          '--body', 'owner sweep 终审通过（硬门禁全过 + 本机 AI 内容终审）'])
+      } catch {
+        console.log(`${tag} approve 留痕跳过（作者即执行者或已 approve）`)
+      }
+    }
     if (DRY_RUN) {
       console.log(`${tag} WOULD MERGE (${method}) — ${pr.title}`)
       merged++

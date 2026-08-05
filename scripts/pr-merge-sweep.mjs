@@ -25,9 +25,8 @@ const repoArgIdx = process.argv.indexOf('--repo')
 const ONLY_REPO = repoArgIdx > -1 ? process.argv[repoArgIdx + 1] : null
 
 const REPOS = [
-  'FiloAI/filoai-frontend',
-  'FiloAI/FiloMailCenter', // 2026-08-05 起含 apps/admin 与 services/doc-reader（原独立仓已并入归档）
-  'FiloAI/FiloClaw',
+  'FiloAI/filoai-frontend', // 客户端唯一仓
+  'FiloAI/FiloMailCenter', // 服务器唯一仓（2026-08-05 起含 apps/admin、services/doc-reader、services/agent）
 ]
 const MAX_MERGES_PER_REPO = 3
 const REQUIRED_CHECK = 'summary'

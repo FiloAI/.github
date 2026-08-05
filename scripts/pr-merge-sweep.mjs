@@ -114,11 +114,12 @@ for (const repo of REPOS) {
     if (greptile && (greptile.status !== 'completed' || greptile.conclusion !== 'success')) {
       skip(`Greptile Review=${greptile.status}/${greptile.conclusion}`); continue
     }
-    if (greptile) {
-      const conf = latestConfidence(repo, pr.number)
-      if (conf === null) { skip('Greptile check 存在但解析不到 Confidence Score'); continue }
-      if (conf < MIN_CONFIDENCE) { skip(`Confidence ${conf}/5 < ${MIN_CONFIDENCE}`); continue }
-    }
+    // Confidence 门禁：只要 Greptile 出过 Confidence 评论就强制 ≥4/5，
+    // 不依赖 check run 是否存在——filo-www 上 Greptile 是纯评论模式（无 check run），
+    // 只按 check 判定会让置信度门禁被整仓绕过（2026-08-05 实查）。
+    const conf = latestConfidence(repo, pr.number)
+    if (greptile && conf === null) { skip('Greptile check 存在但解析不到 Confidence Score'); continue }
+    if (conf !== null && conf < MIN_CONFIDENCE) { skip(`Confidence ${conf}/5 < ${MIN_CONFIDENCE}`); continue }
     const unresolved = unresolvedThreads(repo, pr.number)
     if (unresolved > 0) { skip(`${unresolved} 个未解决 review thread`); continue }
 

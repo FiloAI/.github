@@ -18,7 +18,10 @@
 //   1. 非 draft、base 在该仓允许列表内（见 REPO_BASES）、无 no-automerge 标签、无合并冲突
 //   2. required check `summary` = success
 //   3. `Greptile Review` check（若存在）= success
-//   4. Greptile 最新 Confidence Score ≥ 4/5（有 Greptile 评论时；解析不到则跳过该 PR）
+//   4. 人类作者 PR：Greptile Confidence 评论必须存在且 ≥ 4/5，且必须有
+//      Codex（chatgpt-codex-connector[bot]）review——缺任一 = 跳过。
+//      （2026-08-05 实踩：#3256 在 Greptile 完全缺席时被旧逻辑放行，零 review 合入。）
+//      bot 作者 PR（如版本 bump）豁免此条，靠 summary + 终审 agent 的文件白名单判据。
 //   5. 0 个未解决 review thread（不分作者，bot 的也算——回复完必须 resolve）
 // 合并方式：bot 作者 squash，人类作者 merge commit（与 frontend 既有约定一致）。
 // 每仓每轮最多合并 MAX_MERGES_PER_REPO 个、串行执行——保护打包机队列。
@@ -67,6 +70,14 @@ function latestConfidence(repo, prNumber) {
     if (m) return Number(m[1])
   }
   return null
+}
+
+function hasCodexReview(repo, prNumber) {
+  const reviews = ghJson([
+    'api', `repos/${repo}/pulls/${prNumber}/reviews`, '--paginate',
+    '--jq', '[.[] | .user.login]',
+  ])
+  return reviews.some((l) => l === 'chatgpt-codex-connector[bot]' || l === 'chatgpt-codex-connector')
 }
 
 function unresolvedThreads(repo, prNumber) {
@@ -126,16 +137,22 @@ for (const repo of REPOS) {
     if (greptile && (greptile.status !== 'completed' || greptile.conclusion !== 'success')) {
       skip(`Greptile Review=${greptile.status}/${greptile.conclusion}`); continue
     }
-    // Confidence 门禁：只要 Greptile 出过 Confidence 评论就强制 ≥4/5，
-    // 不依赖 check run 是否存在——filo-www 上 Greptile 是纯评论模式（无 check run），
-    // 只按 check 判定会让置信度门禁被整仓绕过（2026-08-05 实查）。
+    const isBot = pr.author?.is_bot || /\[bot\]$/.test(pr.author?.login ?? '')
+    // Confidence 门禁：凭评论判定（filo-www 上 Greptile 无 check run，2026-08-05 实查）。
+    // 人类 PR：Greptile Confidence 与 Codex review 都必须存在——缺席 ≠ 放行
+    // （2026-08-05 实踩：#3256 零 review 被旧的"缺席即跳过验证"逻辑合入）。
+    // bot PR（版本 bump 等）豁免双 review 硬门禁，由终审 agent 按文件白名单严判。
     const conf = latestConfidence(repo, pr.number)
-    if (greptile && conf === null) { skip('Greptile check 存在但解析不到 Confidence Score'); continue }
     if (conf !== null && conf < MIN_CONFIDENCE) { skip(`Confidence ${conf}/5 < ${MIN_CONFIDENCE}`); continue }
+    if (!isBot) {
+      if (conf === null) { skip('人类 PR 缺 Greptile Confidence 评论（AI review 未完成）'); continue }
+      if (!hasCodexReview(repo, pr.number)) { skip('人类 PR 缺 Codex review'); continue }
+    } else if (greptile && conf === null) {
+      skip('Greptile check 存在但解析不到 Confidence Score'); continue
+    }
     const unresolved = unresolvedThreads(repo, pr.number)
     if (unresolved > 0) { skip(`${unresolved} 个未解决 review thread`); continue }
 
-    const isBot = pr.author?.is_bot || /\[bot\]$/.test(pr.author?.login ?? '')
     const method = isBot ? '--squash' : '--merge'
     if (DRY_RUN) {
       console.log(`${tag} WOULD MERGE (${method}) — ${pr.title}`)

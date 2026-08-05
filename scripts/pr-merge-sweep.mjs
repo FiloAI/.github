@@ -10,7 +10,7 @@
 // 鉴权：走本机 gh CLI 登录态（执行者本人身份），无需额外 token。
 //
 // 每个候选 PR 的门禁（全部满足才合并）：
-//   1. 非 draft、base=dev、无 no-automerge 标签、无合并冲突
+//   1. 非 draft、base 在该仓允许列表内（见 REPO_BASES）、无 no-automerge 标签、无合并冲突
 //   2. required check `summary` = success
 //   3. `Greptile Review` check（若存在）= success
 //   4. Greptile 最新 Confidence Score ≥ 4/5（有 Greptile 评论时；解析不到则跳过该 PR）
@@ -24,10 +24,15 @@ const DRY_RUN = process.argv.includes('--dry-run')
 const repoArgIdx = process.argv.indexOf('--repo')
 const ONLY_REPO = repoArgIdx > -1 ? process.argv[repoArgIdx + 1] : null
 
-const REPOS = [
-  'FiloAI/filoai-frontend', // 客户端唯一仓
-  'FiloAI/FiloMailCenter', // 服务器唯一仓（2026-08-05 起含 apps/admin、services/doc-reader、services/agent）
-]
+// 仓库 → 允许 sweep 合并的 base 分支。
+// filo-www 的发布流程是双 PR 晋级（PR→dev 合并后再开等价 PR→prod，prod 即线上），
+// 所以它的 dev 与 prod PR 都在 sweep 范围内；产品两仓只收 dev。
+const REPO_BASES = {
+  'FiloAI/filoai-frontend': ['dev'], // 客户端唯一仓
+  'FiloAI/FiloMailCenter': ['dev'], // 服务器唯一仓（2026-08-05 起含 apps/admin、services/doc-reader、services/agent）
+  'FiloAI/filo-www': ['dev', 'prod'], // 官网独立仓（2026-08-05 恢复；prod≠dev 是有意差异，暂不并仓）
+}
+const REPOS = Object.keys(REPO_BASES)
 const MAX_MERGES_PER_REPO = 3
 const REQUIRED_CHECK = 'summary'
 const GREPTILE_CHECK = 'Greptile Review'
@@ -95,7 +100,7 @@ for (const repo of REPOS) {
       console.log(`${tag} SKIP: ${why} — ${pr.title}`)
     }
     if (pr.isDraft) { skip('draft'); continue }
-    if (pr.baseRefName !== 'dev') { skip(`base=${pr.baseRefName}≠dev`); continue }
+    if (!REPO_BASES[repo].includes(pr.baseRefName)) { skip(`base=${pr.baseRefName} 不在允许列表 [${REPO_BASES[repo]}]`); continue }
     if (pr.labels.some((l) => l.name === 'no-automerge')) { skip('no-automerge 标签'); continue }
     if (pr.mergeable === 'CONFLICTING') { skip('合并冲突'); continue }
     if (merged >= MAX_MERGES_PER_REPO) { skip('本轮配额已满'); continue }

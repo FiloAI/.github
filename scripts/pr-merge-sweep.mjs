@@ -6,8 +6,13 @@
 // 确定性门禁全过才合并，任何不确定 → 跳过并说明原因，绝不硬合。
 //
 // 用法：
-//   node scripts/pr-merge-sweep.mjs [--dry-run] [--repo owner/name]
+//   node scripts/pr-merge-sweep.mjs [--dry-run] [--repo owner/name] [--pr <number>]
 // 鉴权：走本机 gh CLI 登录态（执行者本人身份），无需额外 token。
+//
+// 2026-08-05 起的混合模式分工：定时任务先跑 --dry-run 拿到过全部硬门禁的候选，
+// 由本机 AI 终审 agent 逐个读 diff 判「是什么/有无危害/与描述相符」，判过的才用
+// --repo X --pr N 定点合并（本脚本是唯一合并执行通道，合并方式仍由脚本判定）。
+// 裸跑（无 --pr）仍是全量模式，仅供人工兜底，常规链路不再直接用。
 //
 // 每个候选 PR 的门禁（全部满足才合并）：
 //   1. 非 draft、base 在该仓允许列表内（见 REPO_BASES）、无 no-automerge 标签、无合并冲突
@@ -23,6 +28,12 @@ import { execFileSync } from 'node:child_process'
 const DRY_RUN = process.argv.includes('--dry-run')
 const repoArgIdx = process.argv.indexOf('--repo')
 const ONLY_REPO = repoArgIdx > -1 ? process.argv[repoArgIdx + 1] : null
+const prArgIdx = process.argv.indexOf('--pr')
+const ONLY_PR = prArgIdx > -1 ? Number(process.argv[prArgIdx + 1]) : null
+if (ONLY_PR !== null && (!Number.isInteger(ONLY_PR) || !ONLY_REPO)) {
+  console.error('--pr 需要一个整数且必须与 --repo 同用')
+  process.exit(1)
+}
 
 // 仓库 → 允许 sweep 合并的 base 分支。
 // 2026-08-05 晚起全组织 main-only：main 是唯一长期分支，正式版打 tag 发布
@@ -94,6 +105,7 @@ for (const repo of REPOS) {
   }
   let merged = 0
   for (const pr of prs) {
+    if (ONLY_PR !== null && pr.number !== ONLY_PR) continue
     const tag = `[${repo}#${pr.number}]`
     const skip = (why) => {
       totalSkipped++

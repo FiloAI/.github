@@ -1,0 +1,33 @@
+name: Feature request
+description: 服务 / 工具的功能改进建议。客户端需求请去 filoai-frontend。
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: use-case
+    attributes:
+      label: 使用场景 / Use case
+      description: 谁、在什么情况下需要这个能力。
+    validations:
+      required: true
+  - type: textarea
+    id: limitation
+    attributes:
+      label: 当前问题 / Current limitation
+      description: 现在缺了什么、绕行方案为什么不够。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望方案
+      description: 有想法就写，没有留空。
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 怎么算做完？写成可验证的检查项。
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true

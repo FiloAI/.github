@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 客户端产品反馈（canonical 入口）
+    url: https://github.com/FiloAI/filoai-frontend/issues/new/choose
+    about: 客户端相关的 bug / 需求一律去 filoai-frontend 提——那里是唯一反馈入口，勾选 Server 影响面会自动镜像到后端仓库。

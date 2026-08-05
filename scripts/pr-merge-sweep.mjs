@@ -45,6 +45,8 @@ const REPO_BASES = {
   'FiloAI/filoai-frontend': ['main'], // 客户端唯一仓
   'FiloAI/FiloMailCenter': ['main'], // 服务器唯一仓（含 apps/admin、services/doc-reader、services/agent）
   'FiloAI/filo-www': ['main'], // 官网独立仓
+  'FiloAI/.github': ['main'], // org 中枢（sweep 脚本自身也走本门禁）
+  'FiloAI/filo-issue-bot': ['main'], // 反馈分诊 bot
 }
 const REPOS = Object.keys(REPO_BASES)
 const MAX_MERGES_PER_REPO = 3

@@ -87,24 +87,27 @@ function hasCodexReview(repo, prNumber) {
   // 永远过不了本门禁）。评论形态只认两个条件同时成立：
   // ① connector 本人发的**明确成功结论**（Didn't find any major issues）——失败、
   //    进度、负面结果不算，防止任意含“Codex Review”字样的文本绕过门禁；
-  // ② 评论时间不早于 PR 最新 commit——旧 head 的干净结论对新 head 无效。
+  // ② 评论正文声明的「Reviewed commit」SHA 必须就是当前 head（headRefOid，服务端
+  //    事实）——不用 committedDate 之类 author 可控时间戳推断新鲜度，天然免疫
+  //    「本地已产新 head→评论发布→再 push」的竞态：push 后 headRefOid 变化，
+  //    旧结论立即失效。评论不带 SHA 的一律不认。
   // 按作者过滤，人类发的「@codex review」召唤评论不会误判。
   const [owner, name] = repo.split('/')
   const headQ = `query { repository(owner: "${owner}", name: "${name}") {
-    pullRequest(number: ${prNumber}) { commits(last: 1) { nodes { commit { committedDate } } } } } }`
-  const headData = ghJson(['api', 'graphql', '-f', `query=${headQ}`])
-  const lastCommitAt = Date.parse(
-    headData.data.repository.pullRequest.commits.nodes[0]?.commit?.committedDate || '',
-  ) || 0
+    pullRequest(number: ${prNumber}) { headRefOid } } }`
+  const headOid = ghJson(['api', 'graphql', '-f', `query=${headQ}`])
+    .data.repository.pullRequest.headRefOid.toLowerCase()
   const comments = ghJson([
     'api', `repos/${repo}/issues/${prNumber}/comments`, '--paginate',
-    '--jq', '[.[] | {login: .user.login, body: .body, created_at: .created_at}]',
+    '--jq', '[.[] | {login: .user.login, body: .body}]',
   ])
-  return comments.some((c) =>
-    CODEX_LOGINS.includes(c.login)
-    && /didn'?t find any major issues/i.test(c.body || '')
-    && (Date.parse(c.created_at || '') || 0) >= lastCommitAt,
-  )
+  return comments.some((c) => {
+    if (!CODEX_LOGINS.includes(c.login)) return false
+    const body = c.body || ''
+    if (!/didn'?t find any major issues/i.test(body)) return false
+    const m = body.match(/reviewed commit[^0-9a-f]*([0-9a-f]{7,40})/i)
+    return !!m && headOid.startsWith(m[1].toLowerCase())
+  })
 }
 
 function unresolvedThreads(repo, prNumber) {

@@ -1,0 +1,4 @@
+# 预检脚本的活体由 Cindy scheduler 的 schedule_set_pre_run_hook 直接写入运行目录，
+# 不入库（否则运行目录永远脏、每轮新 session 的写前门禁必 FAIL）。
+# 备份正本在 ~/.agents/skills/agent-ops/schedule-checks/。
+scripts/schedule-checks/

@@ -84,13 +84,27 @@ function hasCodexReview(repo, prNumber) {
   if (reviews.some((l) => CODEX_LOGINS.includes(l))) return true
   // Codex 无 major issue 时可能只发 issue comment（「Codex Review: Didn't find any
   // major issues」形态，不产生正式 review——2026-08-06 .github#15 实踩：干净 PR 因此
-  // 永远过不了本门禁）。connector 自己发的、含 Codex Review 字样的评论同样算已审；
-  // 按作者过滤，所以人类发的「@codex review」召唤评论不会误判。
+  // 永远过不了本门禁）。评论形态只认两个条件同时成立：
+  // ① connector 本人发的**明确成功结论**（Didn't find any major issues）——失败、
+  //    进度、负面结果不算，防止任意含“Codex Review”字样的文本绕过门禁；
+  // ② 评论时间不早于 PR 最新 commit——旧 head 的干净结论对新 head 无效。
+  // 按作者过滤，人类发的「@codex review」召唤评论不会误判。
+  const [owner, name] = repo.split('/')
+  const headQ = `query { repository(owner: "${owner}", name: "${name}") {
+    pullRequest(number: ${prNumber}) { commits(last: 1) { nodes { commit { committedDate } } } } } }`
+  const headData = ghJson(['api', 'graphql', '-f', `query=${headQ}`])
+  const lastCommitAt = Date.parse(
+    headData.data.repository.pullRequest.commits.nodes[0]?.commit?.committedDate || '',
+  ) || 0
   const comments = ghJson([
     'api', `repos/${repo}/issues/${prNumber}/comments`, '--paginate',
-    '--jq', '[.[] | {login: .user.login, body: .body}]',
+    '--jq', '[.[] | {login: .user.login, body: .body, created_at: .created_at}]',
   ])
-  return comments.some((c) => CODEX_LOGINS.includes(c.login) && /codex review/i.test(c.body || ''))
+  return comments.some((c) =>
+    CODEX_LOGINS.includes(c.login)
+    && /didn'?t find any major issues/i.test(c.body || '')
+    && (Date.parse(c.created_at || '') || 0) >= lastCommitAt,
+  )
 }
 
 function unresolvedThreads(repo, prNumber) {

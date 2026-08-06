@@ -74,12 +74,23 @@ function latestConfidence(repo, prNumber) {
   return null
 }
 
+const CODEX_LOGINS = ['chatgpt-codex-connector[bot]', 'chatgpt-codex-connector']
+
 function hasCodexReview(repo, prNumber) {
   const reviews = ghJson([
     'api', `repos/${repo}/pulls/${prNumber}/reviews`, '--paginate',
     '--jq', '[.[] | .user.login]',
   ])
-  return reviews.some((l) => l === 'chatgpt-codex-connector[bot]' || l === 'chatgpt-codex-connector')
+  if (reviews.some((l) => CODEX_LOGINS.includes(l))) return true
+  // Codex 无 major issue 时可能只发 issue comment（「Codex Review: Didn't find any
+  // major issues」形态，不产生正式 review——2026-08-06 .github#15 实踩：干净 PR 因此
+  // 永远过不了本门禁）。connector 自己发的、含 Codex Review 字样的评论同样算已审；
+  // 按作者过滤，所以人类发的「@codex review」召唤评论不会误判。
+  const comments = ghJson([
+    'api', `repos/${repo}/issues/${prNumber}/comments`, '--paginate',
+    '--jq', '[.[] | {login: .user.login, body: .body}]',
+  ])
+  return comments.some((c) => CODEX_LOGINS.includes(c.login) && /codex review/i.test(c.body || ''))
 }
 
 function unresolvedThreads(repo, prNumber) {

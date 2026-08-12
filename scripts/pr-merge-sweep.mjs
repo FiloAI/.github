@@ -61,12 +61,21 @@ function ghJson(args) {
   return JSON.parse(gh(args))
 }
 
+function ghPaginated(args) {
+  // `gh api --paginate --jq ...` 会为每一页分别打印一个 JSON 值；当结果超过
+  // 一页时，直接 JSON.parse 整段 stdout 会得到 "Unexpected non-whitespace
+  // character after JSON"。改用 --slurp 取得页数组，再在 JS 内做筛选/展开。
+  return ghJson([...args, '--paginate', '--slurp'])
+}
+
 function latestConfidence(repo, prNumber) {
   // Greptile 每轮复审都会发含 Confidence Score 的评论，取最新一条
-  const comments = ghJson([
-    'api', `repos/${repo}/issues/${prNumber}/comments`, '--paginate',
-    '--jq', '[.[] | select(.user.login == "greptile-apps[bot]")] | map({body, created_at})',
+  const pages = ghPaginated([
+    'api', `repos/${repo}/issues/${prNumber}/comments?per_page=100`,
   ])
+  const comments = pages.flat()
+    .filter((c) => c.user?.login === 'greptile-apps[bot]')
+    .map((c) => ({ body: c.body || '', created_at: c.created_at }))
   for (let i = comments.length - 1; i >= 0; i--) {
     const m = comments[i].body.match(/confidence\s*score[:\s]*([0-5])\s*\/\s*5/i)
     if (m) return Number(m[1])
@@ -77,10 +86,10 @@ function latestConfidence(repo, prNumber) {
 const CODEX_LOGINS = ['chatgpt-codex-connector[bot]', 'chatgpt-codex-connector']
 
 function hasCodexReview(repo, prNumber) {
-  const reviews = ghJson([
-    'api', `repos/${repo}/pulls/${prNumber}/reviews`, '--paginate',
-    '--jq', '[.[] | .user.login]',
+  const reviewPages = ghPaginated([
+    'api', `repos/${repo}/pulls/${prNumber}/reviews?per_page=100`,
   ])
+  const reviews = reviewPages.flat().map((r) => r.user?.login).filter(Boolean)
   if (reviews.some((l) => CODEX_LOGINS.includes(l))) return true
   // Codex 无 major issue 时可能只发 issue comment（「Codex Review: Didn't find any
   // major issues」形态，不产生正式 review——2026-08-06 .github#15 实踩：干净 PR 因此
@@ -97,10 +106,11 @@ function hasCodexReview(repo, prNumber) {
     pullRequest(number: ${prNumber}) { headRefOid } } }`
   const headOid = ghJson(['api', 'graphql', '-f', `query=${headQ}`])
     .data.repository.pullRequest.headRefOid.toLowerCase()
-  const comments = ghJson([
-    'api', `repos/${repo}/issues/${prNumber}/comments`, '--paginate',
-    '--jq', '[.[] | {login: .user.login, body: .body}]',
+  const commentPages = ghPaginated([
+    'api', `repos/${repo}/issues/${prNumber}/comments?per_page=100`,
   ])
+  const comments = commentPages.flat()
+    .map((c) => ({ login: c.user?.login, body: c.body || '' }))
   return comments.some((c) => {
     if (!CODEX_LOGINS.includes(c.login)) return false
     const body = c.body || ''
@@ -119,10 +129,11 @@ function unresolvedThreads(repo, prNumber) {
 }
 
 function checkConclusions(repo, sha) {
-  const runs = ghJson([
-    'api', `repos/${repo}/commits/${sha}/check-runs`, '--paginate',
-    '--jq', '[.check_runs[] | {name, status, conclusion}]',
+  const pages = ghPaginated([
+    'api', `repos/${repo}/commits/${sha}/check-runs?per_page=100`,
   ])
+  const runs = pages.flatMap((page) => page.check_runs || [])
+    .map(({ name, status, conclusion }) => ({ name, status, conclusion }))
   // 同名 check 取最新（API 返回按时间倒序，first-wins）
   const byName = {}
   for (const r of runs) if (!(r.name in byName)) byName[r.name] = r
@@ -156,7 +167,9 @@ for (const repo of REPOS) {
     if (!REPO_BASES[repo].includes(pr.baseRefName)) { skip(`base=${pr.baseRefName} 不在允许列表 [${REPO_BASES[repo]}]`); continue }
     if (pr.labels.some((l) => l.name === 'no-automerge')) { skip('no-automerge 标签'); continue }
     // needs-human-review：终审 agent 判定需人工看护（产品方向偏差/功能大包）。
-    // Chris / bobo 看完移除标签即放行，下轮自动重新进入终审。
+    // PR 评论必须明确唯一行动人、具体检查项、通过/不通过各做什么，并明确说明
+    // 「不需要再次 @codex review」。行动人移除标签就是唯一放行信号，下轮自动
+    // 重新进入终审；不要把「再进入终审」这种内部状态机术语留给对方自行猜动作。
     if (pr.labels.some((l) => l.name === 'needs-human-review')) { skip('needs-human-review 等人工放行'); continue }
     if (pr.mergeable === 'CONFLICTING') { skip('合并冲突'); continue }
     if (merged >= MAX_MERGES_PER_REPO) { skip('本轮配额已满'); continue }

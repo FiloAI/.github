@@ -1,4 +1,5 @@
 const REVIEW_PERMISSIONS = new Set(['admin', 'maintain', 'write'])
+const DECISIVE_REVIEW_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED'])
 
 const EXACT_APPROVALS = new Set([
   '同意',
@@ -56,8 +57,10 @@ export function evaluateHumanReviewGate({
   hasLabel,
   authorLogin,
   authorPermission,
+  headOid,
   headCommittedAt,
-  comments,
+  reviews = [],
+  comments = [],
 }) {
   if (!hasLabel) return { satisfied: true, reason: null }
   if (hasReviewPermission(authorPermission)) {
@@ -67,10 +70,70 @@ export function evaluateHumanReviewGate({
     }
   }
 
+  const dismissedReviewIds = new Set(
+    reviews
+      .filter((review) => review.dismissed_at
+        || String(review.state || '').toUpperCase() === 'DISMISSED')
+      .map((review) => review.id)
+      .filter((id) => id !== undefined && id !== null),
+  )
+  const latestApprovalByLogin = new Map()
+  const latestChangeRequestByLogin = new Map()
+  const latestNegativeByLogin = new Map()
+  for (let index = 0; index < reviews.length; index++) {
+    const review = reviews[index]
+    if (!hasReviewPermission(review.permission)) continue
+    // A dismissal cancels the targeted review; it is not a new negative review at
+    // the dismissal timestamp. Treating it as one can let an old dismissed change
+    // request incorrectly override a later approval from the same reviewer.
+    if (dismissedReviewIds.has(review.id)) continue
+    const state = String(review.state || '').toUpperCase()
+    if (!DECISIVE_REVIEW_STATES.has(state)) continue
+    const login = String(review.login || '').toLowerCase()
+    if (!login) continue
+    const submittedAt = Date.parse(review.submitted_at) || 0
+    if (state === 'APPROVED'
+      && String(review.commit_id || '').toLowerCase() === String(headOid || '').toLowerCase()) {
+      const previous = latestApprovalByLogin.get(login)
+      if (!previous || submittedAt > previous.submittedAt || (submittedAt === previous.submittedAt && index > previous.index)) {
+        latestApprovalByLogin.set(login, { review, submittedAt, index })
+      }
+    }
+    if (state === 'CHANGES_REQUESTED') {
+      const previous = latestChangeRequestByLogin.get(login)
+      if (!previous || submittedAt > previous.submittedAt || (submittedAt === previous.submittedAt && index > previous.index)) {
+        latestChangeRequestByLogin.set(login, { review, submittedAt, index })
+      }
+    }
+    if (state === 'CHANGES_REQUESTED') {
+      const negative = latestNegativeByLogin.get(login)
+      if (!negative || submittedAt > negative.submittedAt || (submittedAt === negative.submittedAt && index > negative.index)) {
+        latestNegativeByLogin.set(login, { review, submittedAt, index })
+      }
+    }
+  }
+
+  for (const [login, approval] of latestApprovalByLogin) {
+    const changeRequest = latestChangeRequestByLogin.get(login)
+    if (changeRequest
+      && (changeRequest.submittedAt > approval.submittedAt
+        || (changeRequest.submittedAt === approval.submittedAt
+          && changeRequest.index > approval.index))) continue
+    return {
+      satisfied: true,
+      reason: `${approval.review.login}（${approval.review.permission}）已批准当前 head`,
+    }
+  }
+
   for (let index = comments.length - 1; index >= 0; index--) {
     const comment = comments[index]
     if ((Date.parse(comment.created_at) || 0) < headCommittedAt) continue
     if (!hasReviewPermission(comment.permission) || !isApprovalText(comment.body)) continue
+    const latestNegative = latestNegativeByLogin.get(String(comment.login || '').toLowerCase())
+    if (latestNegative
+      && latestNegative.submittedAt >= (Date.parse(comment.created_at) || 0)) {
+      continue
+    }
     return {
       satisfied: true,
       reason: `${comment.login}（${comment.permission}）已明确确认`,

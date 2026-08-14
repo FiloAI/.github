@@ -319,6 +319,24 @@ test('后续 CHANGES_REQUESTED 会覆盖同一 reviewer 的早期确认评论', 
   }).satisfied, false)
 })
 
+test('评论与否决同秒时保守地让否决优先', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'abc1234',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    comments: [{
+      login: 'reviewer', permission: 'write', body: '确认',
+      created_at: '2026-08-14T00:01:00Z',
+    }],
+    reviews: [{
+      login: 'reviewer', permission: 'write', state: 'CHANGES_REQUESTED', commit_id: 'abc1234',
+      submitted_at: '2026-08-14T00:01:00Z',
+    }],
+  }).satisfied, false)
+})
+
 test('其它 commit 上的后续否决也会覆盖同一 reviewer 的早期确认评论', () => {
   assert.equal(evaluateHumanReviewGate({
     hasLabel: true,

@@ -137,7 +137,7 @@ export function evaluateHumanReviewGate({
     if (!hasReviewPermission(comment.permission) || !isApprovalText(comment.body)) continue
     const latestNegative = latestNegativeByLogin.get(String(comment.login || '').toLowerCase())
     if (latestNegative
-      && latestNegative.submittedAt > (Date.parse(comment.created_at) || 0)) {
+      && latestNegative.submittedAt >= (Date.parse(comment.created_at) || 0)) {
       continue
     }
     return {

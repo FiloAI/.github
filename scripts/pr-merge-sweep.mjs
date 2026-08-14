@@ -293,10 +293,18 @@ for (const repo of REPOS) {
   if (ONLY_REPO && repo !== ONLY_REPO) continue
   let prs
   try {
-    prs = ghJson([
-      'pr', 'list', '--repo', repo, '--state', 'open', '--limit', '100', '--json',
-      'number,title,isDraft,baseRefName,labels,author,mergeable,headRefOid,state',
-    ])
+    if (ONLY_PR !== null) {
+      const targetedPr = ghJson([
+        'pr', 'view', String(ONLY_PR), '--repo', repo, '--json',
+        'number,title,isDraft,baseRefName,labels,author,mergeable,headRefOid,state',
+      ])
+      prs = targetedPr.state === 'OPEN' ? [targetedPr] : []
+    } else {
+      prs = ghJson([
+        'pr', 'list', '--repo', repo, '--state', 'open', '--limit', '100', '--json',
+        'number,title,isDraft,baseRefName,labels,author,mergeable,headRefOid,state',
+      ])
+    }
   } catch (e) {
     console.log(`[${repo}] 列表拉取失败：${e.message}`)
     continue

@@ -28,6 +28,12 @@ function hasOnlyStandardDetails(details) {
   return JSON.stringify(lines) === JSON.stringify(STANDARD_DETAILS_LINES)
 }
 
+function hasSafeDecorativeSuffix(suffix) {
+  const text = String(suffix || '').trim()
+  if (!text) return true
+  return !/(?:however|but|except|although|do\s+not|don['’]t|cannot|can['’]t|must|need|fix|issue|problem|risk|block|merge|until|required|todo|待修|不要|不能|不应|必须|需要|问题|风险|阻塞|合并前)/i.test(text)
+}
+
 function isStandardCodexCommentedReview(body, headOid) {
   const match = String(body || '').match(
     /^\s*### 💡 Codex Review\s+Here are some automated review suggestions for this pull request\.\s+\*\*Reviewed commit:\*\*\s*`([0-9a-f]{7,40})`\s*([\s\S]*)$/,
@@ -54,10 +60,11 @@ export function hasCurrentHeadCodexReview({ reviews = [], comments = [], headOid
     if (!CODEX_LOGINS.has(login)) return false
     const body = String(comment.body || '')
     const match = body.match(
-      /^\s*Codex Review: Didn't find any major issues\.(?:[^\r\n]{0,160})?\r?\n+\*\*Reviewed commit:\*\*\s*`([0-9a-f]{7,40})`\s*([\s\S]*)$/i,
+      /^\s*Codex Review: Didn't find any major issues\.([^\r\n]{0,160})\r?\n+\*\*Reviewed commit:\*\*\s*`([0-9a-f]{7,40})`\s*([\s\S]*)$/i,
     )
     return Boolean(match
-      && head.startsWith(match[1].toLowerCase())
-      && hasOnlyStandardDetails(match[2]))
+      && hasSafeDecorativeSuffix(match[1])
+      && head.startsWith(match[2].toLowerCase())
+      && hasOnlyStandardDetails(match[3]))
   })
 }

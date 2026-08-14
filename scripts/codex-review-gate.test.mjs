@@ -169,6 +169,16 @@ Codex can also answer questions or update the PR. Try commenting "@codex address
   }), true)
 })
 
+test('同一行装饰尾句含否定或待修语义时拒绝', () => {
+  const body = `Codex Review: Didn't find any major issues. However, do not merge until X is fixed.
+
+**Reviewed commit:** \`${HEAD.slice(0, 12)}\``
+  assert.equal(hasCurrentHeadCodexReview({
+    headOid: HEAD,
+    comments: [{ user: { login: 'chatgpt-codex-connector[bot]' }, body }],
+  }), false)
+})
+
 test('无问题评论夹带待修文字不能冒充结论', () => {
   const body = `Codex Review: Didn't find any major issues. :+1:
 

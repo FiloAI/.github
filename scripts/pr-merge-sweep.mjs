@@ -143,44 +143,52 @@ function checkConclusions(repo, sha) {
   const runs = ghJsonPaginated([
     'api', `repos/${repo}/commits/${sha}/check-runs`,
   ]).flatMap((page) => page.check_runs || [])
-  // 同名 check 取最新（API 返回按时间倒序，first-wins）
-  const byName = {}
-  for (const r of runs) if (!(r.name in byName)) byName[r.name] = r
+  const checks = runs.map((run) => ({
+    name: run.name,
+    integrationId: run.app?.id ?? null,
+    status: run.status,
+    conclusion: run.conclusion,
+    at: run.completed_at || run.started_at || run.created_at,
+  }))
   const combined = ghJson([
     'api', `repos/${repo}/commits/${sha}/status`,
   ])
   for (const status of combined.statuses || []) {
-    if (status.context in byName) continue
-    byName[status.context] = {
+    checks.push({
       name: status.context,
+      integrationId: null,
       status: 'completed',
       conclusion: status.state === 'success' ? 'success' : status.state,
-    }
+      at: status.updated_at || status.created_at,
+    })
   }
-  return byName
+  return checks
 }
 
 const requiredCheckCache = new Map()
 
-function requiredCheckNames(repo, baseRefName) {
+function requiredChecks(repo, baseRefName) {
   const key = `${repo}:${baseRefName}`
   if (requiredCheckCache.has(key)) return requiredCheckCache.get(key)
   const rules = ghJson([
     'api', `repos/${repo}/rules/branches/${encodeURIComponent(baseRefName)}`,
   ])
-  const names = [...new Set(rules
+  const requirements = rules
     .filter((rule) => rule.type === 'required_status_checks')
     .flatMap((rule) => rule.parameters?.required_status_checks || [])
-    .map((check) => check.context)
-    .filter(Boolean))]
-  requiredCheckCache.set(key, names)
-  return names
+    .filter((check) => check.context)
+    .map((check) => ({
+      context: check.context,
+      integrationId: check.integration_id ?? null,
+    }))
+  requiredCheckCache.set(key, requirements)
+  return requirements
 }
 
 function requiredChecksGate(repo, pr) {
-  const names = requiredCheckNames(repo, pr.baseRefName)
+  const requirements = requiredChecks(repo, pr.baseRefName)
   const checks = checkConclusions(repo, pr.headRefOid)
-  return evaluateRequiredChecks({ requiredNames: names, checks })
+  return evaluateRequiredChecks({ requirements, checks })
 }
 
 function refreshMergeability(repo, pr) {

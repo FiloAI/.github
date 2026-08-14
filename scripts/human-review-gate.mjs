@@ -70,7 +70,15 @@ export function evaluateHumanReviewGate({
     }
   }
 
-  const latestReviewByLogin = new Map()
+  const dismissedReviewIds = new Set(
+    reviews
+      .filter((review) => review.dismissed_at
+        || String(review.state || '').toUpperCase() === 'DISMISSED')
+      .map((review) => review.id)
+      .filter((id) => id !== undefined && id !== null),
+  )
+  const latestApprovalByLogin = new Map()
+  const latestChangeRequestByLogin = new Map()
   const latestNegativeByLogin = new Map()
   for (let index = 0; index < reviews.length; index++) {
     const review = reviews[index]
@@ -89,9 +97,19 @@ export function evaluateHumanReviewGate({
     const effectiveReview = state === String(review.state || '').toUpperCase()
       ? review
       : { ...review, state }
-    const previous = latestReviewByLogin.get(login)
-    if (!previous || submittedAt > previous.submittedAt || (submittedAt === previous.submittedAt && index > previous.index)) {
-      latestReviewByLogin.set(login, { review: effectiveReview, submittedAt, index })
+    if (state === 'APPROVED'
+      && !dismissedReviewIds.has(review.id)
+      && String(review.commit_id || '').toLowerCase() === String(headOid || '').toLowerCase()) {
+      const previous = latestApprovalByLogin.get(login)
+      if (!previous || submittedAt > previous.submittedAt || (submittedAt === previous.submittedAt && index > previous.index)) {
+        latestApprovalByLogin.set(login, { review: effectiveReview, submittedAt, index })
+      }
+    }
+    if (state === 'CHANGES_REQUESTED') {
+      const previous = latestChangeRequestByLogin.get(login)
+      if (!previous || submittedAt > previous.submittedAt || (submittedAt === previous.submittedAt && index > previous.index)) {
+        latestChangeRequestByLogin.set(login, { review: effectiveReview, submittedAt, index })
+      }
     }
     if (['CHANGES_REQUESTED', 'DISMISSED'].includes(state)) {
       const negative = latestNegativeByLogin.get(login)
@@ -101,12 +119,12 @@ export function evaluateHumanReviewGate({
     }
   }
 
-  for (const { review } of latestReviewByLogin.values()) {
-    if (String(review.state || '').toUpperCase() !== 'APPROVED') continue
-    if (String(review.commit_id || '').toLowerCase() !== String(headOid || '').toLowerCase()) continue
+  for (const [login, approval] of latestApprovalByLogin) {
+    const changeRequest = latestChangeRequestByLogin.get(login)
+    if (changeRequest && changeRequest.submittedAt > approval.submittedAt) continue
     return {
       satisfied: true,
-      reason: `${review.login}（${review.permission}）已批准当前 head`,
+      reason: `${approval.review.login}（${approval.review.permission}）已批准当前 head`,
     }
   }
 

@@ -27,7 +27,7 @@ import { execFileSync } from 'node:child_process'
 import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
-import { buildMergeArgs, classifyMergeOutcome } from './merge-execution-policy.mjs'
+import { buildMergeArgs, classifyMergeOutcome, shouldUseAdmin } from './merge-execution-policy.mjs'
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
@@ -219,6 +219,7 @@ function requiredRuleConfig(repo, baseRefName) {
   const config = {
     requirements,
     strict: checkRules.some((rule) => rule.parameters?.strict_required_status_checks_policy === true),
+    mergeQueue: rules.some((rule) => rule.type === 'merge_queue'),
   }
   requiredCheckCache.set(key, config)
   return config
@@ -228,14 +229,15 @@ function requiredChecksGate(repo, pr) {
   const config = requiredRuleConfig(repo, pr.baseRefName)
   const checks = checkConclusions(repo, pr.headRefOid)
   const checkGate = evaluateRequiredChecks({ requirements: config.requirements, checks })
-  if (!checkGate.satisfied) return { ...checkGate, strict: config.strict }
-  if (!config.strict) return { ...checkGate, strict: false }
+  if (!checkGate.satisfied) return { ...checkGate, strict: config.strict, mergeQueue: config.mergeQueue }
+  if (!config.strict) return { ...checkGate, strict: false, mergeQueue: config.mergeQueue }
   const comparison = ghJson([
     'api', `repos/${repo}/compare/${encodeURIComponent(pr.baseRefName)}...${pr.headRefOid}`,
   ])
   return {
     ...evaluateStrictPolicy({ strict: true, behindBy: comparison.behind_by }),
     strict: true,
+    mergeQueue: config.mergeQueue,
   }
 }
 
@@ -341,7 +343,7 @@ for (const repo of REPOS) {
         number: pr.number,
         method,
         headOid: pr.headRefOid,
-        admin: !requiredGate.strict,
+        admin: shouldUseAdmin(requiredGate),
       })
       gh(mergeArgs)
       let mergedPr = readMergeOutcome(repo, pr.number)

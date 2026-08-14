@@ -12,3 +12,7 @@ export function classifyMergeOutcome(pr) {
   if (pr.isInMergeQueue || pr.mergeQueueEntry) return 'queued'
   return 'pending'
 }
+
+export function shouldUseAdmin({ strict = false, mergeQueue = false }) {
+  return !strict && !mergeQueue
+}

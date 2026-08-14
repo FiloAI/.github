@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   buildMergeArgs,
   classifyMergeOutcome,
+  shouldUseAdmin,
 } from './merge-execution-policy.mjs'
 
 test('merge args 始终绑定当前 head，只有明确请求时才使用 admin', () => {
@@ -25,4 +26,11 @@ test('merge 命令结果区分已合并、已入队与未生效', () => {
   assert.equal(classifyMergeOutcome({ state: 'OPEN', isInMergeQueue: true }), 'queued')
   assert.equal(classifyMergeOutcome({ state: 'OPEN', mergeQueueEntry: { id: 'MQE_1' } }), 'queued')
   assert.equal(classifyMergeOutcome({ state: 'OPEN', isInMergeQueue: false }), 'pending')
+})
+
+test('strict 或 merge queue 分支都不能使用 admin 绕过', () => {
+  assert.equal(shouldUseAdmin({ strict: false, mergeQueue: false }), true)
+  assert.equal(shouldUseAdmin({ strict: true, mergeQueue: false }), false)
+  assert.equal(shouldUseAdmin({ strict: false, mergeQueue: true }), false)
+  assert.equal(shouldUseAdmin({ strict: true, mergeQueue: true }), false)
 })

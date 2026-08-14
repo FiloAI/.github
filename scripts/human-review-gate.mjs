@@ -71,7 +71,7 @@ export function evaluateHumanReviewGate({
   }
 
   const latestReviewByLogin = new Map()
-  const latestCurrentHeadNegativeByLogin = new Map()
+  const latestNegativeByLogin = new Map()
   for (let index = 0; index < reviews.length; index++) {
     const review = reviews[index]
     if (!hasReviewPermission(review.permission)) continue
@@ -83,11 +83,10 @@ export function evaluateHumanReviewGate({
     if (!previous || submittedAt > previous.submittedAt || (submittedAt === previous.submittedAt && index > previous.index)) {
       latestReviewByLogin.set(login, { review, submittedAt, index })
     }
-    if (String(review.commit_id || '').toLowerCase() === String(headOid || '').toLowerCase()
-      && ['CHANGES_REQUESTED', 'DISMISSED'].includes(String(review.state || '').toUpperCase())) {
-      const negative = latestCurrentHeadNegativeByLogin.get(login)
+    if (['CHANGES_REQUESTED', 'DISMISSED'].includes(String(review.state || '').toUpperCase())) {
+      const negative = latestNegativeByLogin.get(login)
       if (!negative || submittedAt > negative.submittedAt || (submittedAt === negative.submittedAt && index > negative.index)) {
-        latestCurrentHeadNegativeByLogin.set(login, { review, submittedAt, index })
+        latestNegativeByLogin.set(login, { review, submittedAt, index })
       }
     }
   }
@@ -105,7 +104,7 @@ export function evaluateHumanReviewGate({
     const comment = comments[index]
     if ((Date.parse(comment.created_at) || 0) < headCommittedAt) continue
     if (!hasReviewPermission(comment.permission) || !isApprovalText(comment.body)) continue
-    const latestNegative = latestCurrentHeadNegativeByLogin.get(String(comment.login || '').toLowerCase())
+    const latestNegative = latestNegativeByLogin.get(String(comment.login || '').toLowerCase())
     if (latestNegative
       && latestNegative.submittedAt > (Date.parse(comment.created_at) || 0)) {
       continue

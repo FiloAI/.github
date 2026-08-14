@@ -145,6 +145,7 @@ function checkConclusions(repo, sha) {
   ]).flatMap((page) => page.check_runs || [])
   const checks = runs.map((run) => ({
     name: run.name,
+    producer: 'check',
     integrationId: run.app?.id ?? null,
     status: run.status,
     conclusion: run.conclusion,
@@ -157,6 +158,7 @@ function checkConclusions(repo, sha) {
   for (const status of statuses) {
     checks.push({
       name: status.context,
+      producer: 'status',
       integrationId: null,
       status: 'completed',
       conclusion: status.state === 'success' ? 'success' : status.state,
@@ -171,7 +173,7 @@ const requiredCheckCache = new Map()
 function requiredChecks(repo, baseRefName) {
   const key = `${repo}:${baseRefName}`
   if (requiredCheckCache.has(key)) return requiredCheckCache.get(key)
-  const rules = ghJson([
+  const rules = ghJsonPaginated([
     'api', `repos/${repo}/rules/branches/${encodeURIComponent(baseRefName)}`,
   ])
   const requirements = rules

@@ -29,7 +29,7 @@ test('缺失、失败或未完成的 required check 都阻塞', () => {
     ],
   })
   assert.equal(result.satisfied, false)
-  assert.match(result.reason, /hygiene=completed\/failure/)
+  assert.match(result.reason, /hygiene=status:completed\/failure/)
   assert.match(result.reason, /deploy=缺失/)
 })
 
@@ -48,7 +48,7 @@ test('绑定 GitHub App 的 required check 只接受同一 integration', () => {
     ],
   })
   assert.equal(result.satisfied, false)
-  assert.match(result.reason, /summary@app:123=completed\/failure/)
+  assert.match(result.reason, /summary@app:123=check:completed\/failure/)
 })
 
 test('同一 integration 只认最新 check 状态', () => {
@@ -74,4 +74,23 @@ test('GitHub 视为通过的 neutral 与 skipped 不阻塞', () => {
       checks: [{ name: 'summary', status: 'completed', conclusion }],
     }).satisfied, true, conclusion)
   }
+})
+
+test('同名 Check Run 与 legacy status 必须分别通过', () => {
+  const result = evaluateRequiredChecks({
+    requirements: [{ context: 'summary' }],
+    checks: [
+      {
+        name: 'summary', producer: 'check', integrationId: 123,
+        status: 'completed', conclusion: 'success', at: '2026-08-14T00:02:00Z',
+      },
+      {
+        name: 'summary', producer: 'status', integrationId: null,
+        status: 'completed', conclusion: 'failure', at: '2026-08-14T00:01:00Z',
+      },
+    ],
+  })
+  assert.equal(result.satisfied, false)
+  assert.match(result.reason, /check:completed\/success/)
+  assert.match(result.reason, /status:completed\/failure/)
 })

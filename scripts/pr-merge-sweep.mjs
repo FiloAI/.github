@@ -150,10 +150,11 @@ function checkConclusions(repo, sha) {
     conclusion: run.conclusion,
     at: run.completed_at || run.started_at || run.created_at,
   }))
-  const combined = ghJson([
+  const combinedPages = ghJsonPaginated([
     'api', `repos/${repo}/commits/${sha}/status`,
   ])
-  for (const status of combined.statuses || []) {
+  const statuses = combinedPages.flatMap((page) => page.statuses || [])
+  for (const status of statuses) {
     checks.push({
       name: status.context,
       integrationId: null,

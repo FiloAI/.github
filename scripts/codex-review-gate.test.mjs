@@ -146,6 +146,29 @@ Codex can also answer questions or update the PR. Try commenting "@codex address
   }), false)
 })
 
+test('Codex 更换同一行装饰尾句时不再误报缺审核', () => {
+  const body = `Codex Review: Didn't find any major issues. More of your lovely PRs please.
+
+**Reviewed commit:** \`${HEAD.slice(0, 12)}\`
+
+<details> <summary>ℹ️ About Codex in GitHub</summary>
+<br/>
+
+[Your team has set up Codex to review pull requests in this repo](https://chatgpt.com/codex/cloud/settings/general). Reviews are triggered when you
+- Open a pull request for review
+- Mark a draft as ready
+- Comment "@codex review".
+
+If Codex has suggestions, it will comment; otherwise it will react with 👍.
+
+Codex can also answer questions or update the PR. Try commenting "@codex address that feedback".
+</details>`
+  assert.equal(hasCurrentHeadCodexReview({
+    headOid: HEAD,
+    comments: [{ user: { login: 'chatgpt-codex-connector[bot]' }, body }],
+  }), true)
+})
+
 test('无问题评论夹带待修文字不能冒充结论', () => {
   const body = `Codex Review: Didn't find any major issues. :+1:
 

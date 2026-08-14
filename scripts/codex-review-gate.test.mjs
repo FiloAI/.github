@@ -181,6 +181,7 @@ test('同一行装饰尾句含否定或待修语义时拒绝', () => {
 
 test('同一行装饰尾句含等待或 pending 流程语义时拒绝', () => {
   for (const suffix of [
+    'There is a bug in the merge logic.',
     'Please wait for the security review.',
     'Hold off while approval is pending.',
     '稍后检查完成后再处理。',

@@ -205,11 +205,7 @@ function checkConclusions(repo, sha) {
   return checks
 }
 
-const requiredCheckCache = new Map()
-
 function requiredRuleConfig(repo, baseRefName) {
-  const key = `${repo}:${baseRefName}`
-  if (requiredCheckCache.has(key)) return requiredCheckCache.get(key)
   const rules = ghJsonPaginated([
     'api', `repos/${repo}/rules/branches/${encodeURIComponent(baseRefName)}`,
   ])
@@ -226,7 +222,6 @@ function requiredRuleConfig(repo, baseRefName) {
     strict: checkRules.some((rule) => rule.parameters?.strict_required_status_checks_policy === true),
     mergeQueue: rules.some((rule) => rule.type === 'merge_queue'),
   }
-  requiredCheckCache.set(key, config)
   return config
 }
 
@@ -262,6 +257,7 @@ function readMergeOutcome(repo, prNumber) {
   const query = `query { repository(owner: "${owner}", name: "${name}") {
     pullRequest(number: ${prNumber}) {
       state mergedAt mergeCommit { oid } isInMergeQueue mergeQueueEntry { id }
+      autoMergeRequest { enabledAt }
     } } }`
   return ghJson(['api', 'graphql', '-f', `query=${query}`])
     .data.repository.pullRequest
@@ -291,11 +287,12 @@ function evaluateCandidate(repo, pr) {
   }
   const humanGate = humanReviewGate(repo, pr)
   if (!humanGate.satisfied) return { satisfied: false, reason: humanGate.reason }
-  return { satisfied: true, requiredGate, isBot, humanReason: humanGate.reason }
+  return { satisfied: true, isBot, humanReason: humanGate.reason }
 }
 
 let totalMerged = 0
 let totalQueued = 0
+let totalScheduled = 0
 let totalSkipped = 0
 
 for (const repo of REPOS) {
@@ -334,7 +331,7 @@ for (const repo of REPOS) {
     if (ONLY_PR !== null && pr.number !== ONLY_PR) continue
     const candidate = evaluateCandidate(repo, pr)
     if (!candidate.satisfied) { skip(candidate.reason); continue }
-    const { requiredGate, isBot } = candidate
+    const { isBot } = candidate
     if (candidate.humanReason) console.log(`${tag} HUMAN GATE SATISFIED: ${candidate.humanReason}`)
 
     const method = isBot ? '--squash' : '--merge'
@@ -343,6 +340,12 @@ for (const repo of REPOS) {
       continue
     }
     try {
+      // 实合并前重新读取当前 ruleset、checks 与 strict/queue 配置；不复用本轮前面
+      // PR 的规则快照，避免长 sweep 在规则变化后仍选择 owner bypass。
+      const liveRequiredGate = requiredChecksGate(repo, pr)
+      if (!liveRequiredGate.satisfied) {
+        throw new Error(`合并前 required gate 已变化：${liveRequiredGate.reason}`)
+      }
       // strict required checks 必须由 GitHub 在 merge 时原子校验，不能在客户端
       // 检查 base 后再用 --admin 绕过；当前五仓 pull_request rules 均为 0 approvals。
       const mergeArgs = buildMergeArgs({
@@ -350,7 +353,7 @@ for (const repo of REPOS) {
         number: pr.number,
         method,
         headOid: pr.headRefOid,
-        admin: shouldUseAdmin(requiredGate),
+        admin: shouldUseAdmin(liveRequiredGate),
       })
       gh(mergeArgs)
       let mergedPr = readMergeOutcome(repo, pr.number)
@@ -365,6 +368,11 @@ for (const repo of REPOS) {
         totalQueued++
         continue
       }
+      if (outcome === 'scheduled') {
+        console.log(`${tag} SCHEDULED (${method}) — ${pr.title}`)
+        totalScheduled++
+        continue
+      }
       if (outcome !== 'merged') {
         throw new Error(`合并命令返回但 live state=${mergedPr.state} queue=${Boolean(mergedPr.isInMergeQueue)}`)
       }
@@ -377,4 +385,4 @@ for (const repo of REPOS) {
   if (prs.length === 0) console.log(`[${repo}] 无 open PR`)
 }
 
-console.log(`\nsweep 完成：merged=${DRY_RUN ? '(dry-run)' : totalMerged} queued=${totalQueued} skipped=${totalSkipped}`)
+console.log(`\nsweep 完成：merged=${DRY_RUN ? '(dry-run)' : totalMerged} queued=${totalQueued} scheduled=${totalScheduled} skipped=${totalSkipped}`)

@@ -26,6 +26,7 @@ test('merge 命令结果区分已合并、已入队与未生效', () => {
   assert.equal(classifyMergeOutcome({ state: 'MERGED', mergedAt: '2026-08-14T00:00:00Z' }), 'merged')
   assert.equal(classifyMergeOutcome({ state: 'OPEN', isInMergeQueue: true }), 'queued')
   assert.equal(classifyMergeOutcome({ state: 'OPEN', mergeQueueEntry: { id: 'MQE_1' } }), 'queued')
+  assert.equal(classifyMergeOutcome({ state: 'OPEN', autoMergeRequest: { enabledAt: '2026-08-14T00:00:00Z' } }), 'scheduled')
   assert.equal(classifyMergeOutcome({ state: 'OPEN', isInMergeQueue: false }), 'pending')
 })
 

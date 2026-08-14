@@ -22,7 +22,6 @@
 //   5. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
 // Greptile、Confidence、改动规模、作者身份分级与产品/视觉分类均不是合并门禁。
 // 合并方式：bot 作者 squash，人类作者 merge commit（与 frontend 既有约定一致）。
-// 每仓每轮最多合并 MAX_MERGES_PER_REPO 个、串行执行——保护打包机队列。
 
 import { execFileSync } from 'node:child_process'
 import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'

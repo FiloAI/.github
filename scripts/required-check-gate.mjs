@@ -6,6 +6,11 @@ function checkTime(check) {
   return Date.parse(check.at || 0) || 0
 }
 
+function checkOrder(check) {
+  const sequence = Number(check.sequence)
+  return Number.isFinite(sequence) && sequence > 0 ? sequence : checkTime(check)
+}
+
 const PASSING_CONCLUSIONS = new Set(['success', 'neutral', 'skipped'])
 
 function producerKey(check) {
@@ -20,7 +25,7 @@ function latestMatchingChecks(requirement, checks) {
   const latestByProducer = new Map()
   for (const check of matching) {
     const key = producerKey(check)
-    if (!latestByProducer.has(key) || checkTime(check) > checkTime(latestByProducer.get(key))) {
+    if (!latestByProducer.has(key) || checkOrder(check) > checkOrder(latestByProducer.get(key))) {
       latestByProducer.set(key, check)
     }
   }
@@ -54,4 +59,12 @@ export function evaluateRequiredChecks({ requirements = [], checks = [] }) {
     return `${label}=${states}`
   }).join(', ')
   return { satisfied: false, reason: `required checks 未通过: ${reason}` }
+}
+
+export function evaluateStrictPolicy({ strict = false, behindBy = 0 }) {
+  if (!strict || Number(behindBy) === 0) return { satisfied: true, reason: null }
+  return {
+    satisfied: false,
+    reason: `strict required checks 要求当前 head 与 base 同步（behind_by=${behindBy}）`,
+  }
 }

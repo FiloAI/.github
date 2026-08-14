@@ -97,6 +97,12 @@ export function evaluateHumanReviewGate({
     const comment = comments[index]
     if ((Date.parse(comment.created_at) || 0) < headCommittedAt) continue
     if (!hasReviewPermission(comment.permission) || !isApprovalText(comment.body)) continue
+    const latestReview = latestReviewByLogin.get(String(comment.login || '').toLowerCase())
+    if (latestReview
+      && latestReview.submittedAt > (Date.parse(comment.created_at) || 0)
+      && ['CHANGES_REQUESTED', 'DISMISSED'].includes(String(latestReview.review.state || '').toUpperCase())) {
+      continue
+    }
     return {
       satisfied: true,
       reason: `${comment.login}（${comment.permission}）已明确确认`,

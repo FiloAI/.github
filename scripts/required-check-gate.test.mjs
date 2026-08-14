@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { evaluateRequiredChecks } from './required-check-gate.mjs'
+import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 
 test('仓库没有 required checks 时不虚构 summary', () => {
   assert.deepEqual(evaluateRequiredChecks({ requirements: [], checks: [] }), {
@@ -93,4 +93,28 @@ test('同名 Check Run 与 legacy status 必须分别通过', () => {
   assert.equal(result.satisfied, false)
   assert.match(result.reason, /check:completed\/success/)
   assert.match(result.reason, /status:completed\/failure/)
+})
+
+test('同一 producer 以最新 invocation 而非完成时间为准', () => {
+  const result = evaluateRequiredChecks({
+    requirements: [{ context: 'summary' }],
+    checks: [
+      {
+        name: 'summary', producer: 'check', sequence: 100,
+        status: 'completed', conclusion: 'success', at: '2026-08-14T00:03:00Z',
+      },
+      {
+        name: 'summary', producer: 'check', sequence: 101,
+        status: 'completed', conclusion: 'failure', at: '2026-08-14T00:02:00Z',
+      },
+    ],
+  })
+  assert.equal(result.satisfied, false)
+  assert.match(result.reason, /check:completed\/failure/)
+})
+
+test('strict policy 在 head 落后 base 时阻塞', () => {
+  assert.equal(evaluateStrictPolicy({ strict: false, behindBy: 2 }).satisfied, true)
+  assert.equal(evaluateStrictPolicy({ strict: true, behindBy: 0 }).satisfied, true)
+  assert.equal(evaluateStrictPolicy({ strict: true, behindBy: 2 }).satisfied, false)
 })

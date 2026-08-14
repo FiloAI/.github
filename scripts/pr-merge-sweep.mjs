@@ -27,7 +27,7 @@ import { execFileSync } from 'node:child_process'
 import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
-import { evaluateRequiredChecks } from './required-check-gate.mjs'
+import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
 const repoArgIdx = process.argv.indexOf('--repo')
@@ -146,6 +146,7 @@ function checkConclusions(repo, sha) {
   const checks = runs.map((run) => ({
     name: run.name,
     producer: 'check',
+    sequence: run.id,
     integrationId: run.app?.id ?? null,
     status: run.status,
     conclusion: run.conclusion,
@@ -159,6 +160,7 @@ function checkConclusions(repo, sha) {
     checks.push({
       name: status.context,
       producer: 'status',
+      sequence: status.id,
       integrationId: null,
       status: 'completed',
       conclusion: status.state === 'success' ? 'success' : status.state,
@@ -170,28 +172,37 @@ function checkConclusions(repo, sha) {
 
 const requiredCheckCache = new Map()
 
-function requiredChecks(repo, baseRefName) {
+function requiredRuleConfig(repo, baseRefName) {
   const key = `${repo}:${baseRefName}`
   if (requiredCheckCache.has(key)) return requiredCheckCache.get(key)
   const rules = ghJsonPaginated([
     'api', `repos/${repo}/rules/branches/${encodeURIComponent(baseRefName)}`,
   ])
-  const requirements = rules
-    .filter((rule) => rule.type === 'required_status_checks')
+  const checkRules = rules.filter((rule) => rule.type === 'required_status_checks')
+  const requirements = checkRules
     .flatMap((rule) => rule.parameters?.required_status_checks || [])
     .filter((check) => check.context)
     .map((check) => ({
       context: check.context,
       integrationId: check.integration_id ?? null,
     }))
-  requiredCheckCache.set(key, requirements)
-  return requirements
+  const config = {
+    requirements,
+    strict: checkRules.some((rule) => rule.parameters?.strict_required_status_checks_policy === true),
+  }
+  requiredCheckCache.set(key, config)
+  return config
 }
 
 function requiredChecksGate(repo, pr) {
-  const requirements = requiredChecks(repo, pr.baseRefName)
+  const config = requiredRuleConfig(repo, pr.baseRefName)
   const checks = checkConclusions(repo, pr.headRefOid)
-  return evaluateRequiredChecks({ requirements, checks })
+  const checkGate = evaluateRequiredChecks({ requirements: config.requirements, checks })
+  if (!checkGate.satisfied || !config.strict) return checkGate
+  const comparison = ghJson([
+    'api', `repos/${repo}/compare/${encodeURIComponent(pr.baseRefName)}...${pr.headRefOid}`,
+  ])
+  return evaluateStrictPolicy({ strict: true, behindBy: comparison.behind_by })
 }
 
 function refreshMergeability(repo, pr) {

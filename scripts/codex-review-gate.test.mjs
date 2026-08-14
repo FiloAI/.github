@@ -182,6 +182,7 @@ test('同一行装饰尾句含否定或待修语义时拒绝', () => {
 test('同一行装饰尾句含等待或 pending 流程语义时拒绝', () => {
   for (const suffix of [
     'There is a bug in the merge logic.',
+    'The code crashes on empty input.',
     'Please wait for the security review.',
     'Hold off while approval is pending.',
     '稍后检查完成后再处理。',
@@ -193,6 +194,36 @@ test('同一行装饰尾句含等待或 pending 流程语义时拒绝', () => {
       headOid: HEAD,
       comments: [{ user: { login: 'chatgpt-codex-connector[bot]' }, body }],
     }), false, suffix)
+  }
+})
+
+test('只接受已知纯装饰尾句', () => {
+  for (const suffix of [
+    'Already looking forward to the next diff.',
+    'More of your lovely PRs please.',
+    'Swish!',
+    ':+1:',
+  ]) {
+    const body = `Codex Review: Didn't find any major issues. ${suffix}
+
+**Reviewed commit:** \`${HEAD.slice(0, 12)}\`
+
+<details> <summary>ℹ️ About Codex in GitHub</summary>
+<br/>
+
+[Your team has set up Codex to review pull requests in this repo](https://chatgpt.com/codex/cloud/settings/general). Reviews are triggered when you
+- Open a pull request for review
+- Mark a draft as ready
+- Comment "@codex review".
+
+If Codex has suggestions, it will comment; otherwise it will react with 👍.
+
+Codex can also answer questions or update the PR. Try commenting "@codex address that feedback".
+</details>`
+    assert.equal(hasCurrentHeadCodexReview({
+      headOid: HEAD,
+      comments: [{ user: { login: 'chatgpt-codex-connector[bot]' }, body }],
+    }), true, suffix)
   }
 })
 

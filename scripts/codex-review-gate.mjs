@@ -28,10 +28,16 @@ function hasOnlyStandardDetails(details) {
   return JSON.stringify(lines) === JSON.stringify(STANDARD_DETAILS_LINES)
 }
 
+const SAFE_DECORATIVE_SUFFIXES = new Set([
+  '',
+  'Already looking forward to the next diff.',
+  'More of your lovely PRs please.',
+  'Swish!',
+])
+
 function hasSafeDecorativeSuffix(suffix) {
   const text = String(suffix || '').trim()
-  if (!text) return true
-  return !/(?:however|but|except|although|do\s+not|don['’]t|cannot|can['’]t|must|need|fix|issue|problem|risk|block|merge|until|required|todo|wait|hold(?:\s+off)?|pending|pause|defer|delay|later|review|approval|check|security|verify|confirm|follow[- ]?up|before|after|once|when|unless|without|stop|refrain|待修|不要|不能|不应|必须|需要|问题|风险|阻塞|合并前|等待|暂缓|稍后|审查|审核|批准|检查|验证|确认后|之后|之前|直到|除非|暂停|延迟)/i.test(text)
+  return SAFE_DECORATIVE_SUFFIXES.has(text) || /^:[a-z0-9_+\-]+:$/i.test(text)
 }
 
 function isStandardCodexCommentedReview(body, headOid) {

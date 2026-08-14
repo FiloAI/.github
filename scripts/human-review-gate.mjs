@@ -90,11 +90,7 @@ export function evaluateHumanReviewGate({
     if (!DECISIVE_REVIEW_STATES.has(state)) continue
     const login = String(review.login || '').toLowerCase()
     if (!login) continue
-    const submittedAt = Date.parse(
-      state === 'DISMISSED'
-        ? review.dismissed_at || review.submitted_at
-        : review.submitted_at,
-    ) || 0
+    const submittedAt = Date.parse(review.dismissed_at || review.submitted_at) || 0
     const effectiveReview = state === String(review.state || '').toUpperCase()
       ? review
       : { ...review, state }

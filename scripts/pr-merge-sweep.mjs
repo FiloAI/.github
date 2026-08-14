@@ -270,6 +270,13 @@ function refreshMergeability(repo, pr) {
   return { ...pr, ...live }
 }
 
+function readPr(repo, prNumber) {
+  return ghJson([
+    'pr', 'view', String(prNumber), '--repo', repo, '--json',
+    'number,title,isDraft,baseRefName,labels,author,mergeable,headRefOid,state',
+  ])
+}
+
 function readMergeOutcome(repo, prNumber) {
   const [owner, name] = repo.split('/')
   const query = `query { repository(owner: "${owner}", name: "${name}") {
@@ -305,7 +312,7 @@ function evaluateCandidate(repo, pr) {
   }
   const humanGate = humanReviewGate(repo, pr)
   if (!humanGate.satisfied) return { satisfied: false, reason: humanGate.reason }
-  return { satisfied: true, isBot, humanReason: humanGate.reason }
+  return { satisfied: true, requiredGate, isBot, humanReason: humanGate.reason }
 }
 
 let totalMerged = 0
@@ -318,10 +325,7 @@ for (const repo of REPOS) {
   let prs
   try {
     if (ONLY_PR !== null) {
-      const targetedPr = ghJson([
-        'pr', 'view', String(ONLY_PR), '--repo', repo, '--json',
-        'number,title,isDraft,baseRefName,labels,author,mergeable,headRefOid,state',
-      ])
+      const targetedPr = readPr(repo, ONLY_PR)
       prs = targetedPr.state === 'OPEN' ? [targetedPr] : []
     } else {
       prs = ghJson([
@@ -362,12 +366,17 @@ for (const repo of REPOS) {
       continue
     }
     try {
-      // 实合并前重新读取当前 ruleset、checks 与 strict/queue 配置；不复用本轮前面
-      // PR 的规则快照，避免长 sweep 在规则变化后仍选择 owner bypass。
-      const liveRequiredGate = requiredChecksGate(repo, pr)
-      if (!liveRequiredGate.satisfied) {
-        throw new Error(`合并前 required gate 已变化：${liveRequiredGate.reason}`)
+      // 实合并前重新读取 PR 元数据与全部门禁，避免 head 不变但 base、标签、draft、
+      // mergeability、rules/checks、review/thread 状态变化后仍使用旧快照合并。
+      const livePr = refreshMergeability(repo, readPr(repo, pr.number))
+      if (!matchesExpectedHead(pr.headRefOid, livePr.headRefOid)) {
+        throw new Error(`合并前 head 已变化：expected=${pr.headRefOid} actual=${livePr.headRefOid}`)
       }
+      const liveCandidate = evaluateCandidate(repo, livePr)
+      if (!liveCandidate.satisfied) {
+        throw new Error(`合并前门禁已变化：${liveCandidate.reason}`)
+      }
+      const liveRequiredGate = liveCandidate.requiredGate
       // strict required checks 必须由 GitHub 在 merge 时原子校验，不能在客户端
       // 检查 base 后再用 --admin 绕过；当前五仓 pull_request rules 均为 0 approvals。
       const mergeArgs = buildMergeArgs({

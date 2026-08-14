@@ -27,6 +27,7 @@
 // 每仓每轮最多合并 MAX_MERGES_PER_REPO 个、串行执行——保护打包机队列。
 
 import { execFileSync } from 'node:child_process'
+import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
 const repoArgIdx = process.argv.indexOf('--repo')
@@ -59,6 +60,50 @@ function gh(args, opts = {}) {
 }
 function ghJson(args) {
   return JSON.parse(gh(args))
+}
+
+const permissionCache = new Map()
+
+function collaboratorPermission(repo, login) {
+  const key = `${repo}:${login}`
+  if (permissionCache.has(key)) return permissionCache.get(key)
+  try {
+    const permission = gh([
+      'api', `repos/${repo}/collaborators/${login}/permission`, '--jq', '.permission',
+    ]).trim()
+    permissionCache.set(key, permission)
+    return permission
+  } catch {
+    permissionCache.set(key, null)
+    return null
+  }
+}
+
+function humanReviewGate(repo, pr) {
+  const hasLabel = pr.labels.some((label) => label.name === 'needs-human-review')
+  if (!hasLabel) return { satisfied: true, reason: null }
+
+  const authorLogin = pr.author?.login || ''
+  const authorPermission = collaboratorPermission(repo, authorLogin)
+  const headCommittedAt = Date.parse(gh([
+    'api', `repos/${repo}/commits/${pr.headRefOid}`, '--jq', '.commit.committer.date',
+  ]).trim()) || 0
+  const commentPages = ghJson([
+    'api', `repos/${repo}/issues/${pr.number}/comments`, '--paginate', '--slurp',
+  ])
+  const comments = commentPages.flat().map((comment) => ({
+    login: comment.user?.login || '',
+    permission: collaboratorPermission(repo, comment.user?.login || ''),
+    body: comment.body || '',
+    created_at: comment.created_at,
+  }))
+  return evaluateHumanReviewGate({
+    hasLabel,
+    authorLogin,
+    authorPermission,
+    headCommittedAt,
+    comments,
+  })
 }
 
 function latestConfidence(repo, prNumber) {
@@ -155,9 +200,12 @@ for (const repo of REPOS) {
     if (pr.isDraft) { skip('draft'); continue }
     if (!REPO_BASES[repo].includes(pr.baseRefName)) { skip(`base=${pr.baseRefName} 不在允许列表 [${REPO_BASES[repo]}]`); continue }
     if (pr.labels.some((l) => l.name === 'no-automerge')) { skip('no-automerge 标签'); continue }
-    // needs-human-review：终审 agent 判定需人工看护（产品方向偏差/功能大包）。
-    // Chris / bobo 看完移除标签即放行，下轮自动重新进入终审。
-    if (pr.labels.some((l) => l.name === 'needs-human-review')) { skip('needs-human-review 等人工放行'); continue }
+    // needs-human-review 不是永久锁：作者本人具备 review 权限时自动满足，不要求
+    // 自我 approve/留言；否则当前 head 后任一有 review 权限的人用自然语言明确
+    // 表达「同意/确认/可以/合并/LGTM」即可。标签残留不能覆盖实时确认事实。
+    const humanGate = humanReviewGate(repo, pr)
+    if (!humanGate.satisfied) { skip(humanGate.reason); continue }
+    if (humanGate.reason) console.log(`${tag} HUMAN GATE SATISFIED: ${humanGate.reason}`)
     if (pr.mergeable === 'CONFLICTING') { skip('合并冲突'); continue }
     if (merged >= MAX_MERGES_PER_REPO) { skip('本轮配额已满'); continue }
 

@@ -21,3 +21,7 @@ export function shouldUseAdmin({ strict = false, mergeQueue = false }) {
 export function shouldRequireUpToDate({ strict = false, mergeQueue = false }) {
   return strict && !mergeQueue
 }
+
+export function matchesExpectedHead(expectedHead, actualHead) {
+  return String(expectedHead || '').toLowerCase() === String(actualHead || '').toLowerCase()
+}

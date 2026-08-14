@@ -188,6 +188,27 @@ test('撤销旧 approval 不覆盖同一 reviewer 后来仍有效的新 approval
   }).satisfied, true)
 })
 
+test('dismissed 的 CHANGES_REQUESTED 不让更早 approval 复活', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'abc1234',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    reviews: [
+      {
+        id: 101, login: 'reviewer', permission: 'write', state: 'APPROVED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:01:00Z',
+      },
+      {
+        id: 102, login: 'reviewer', permission: 'write', state: 'DISMISSED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:02:00Z', dismissed_at: '2026-08-14T00:03:00Z',
+        dismissed_previous_state: 'CHANGES_REQUESTED',
+      },
+    ],
+  }).satisfied, false)
+})
+
 test('dismissed 使用真实撤销时间覆盖撤销前的确认评论', () => {
   assert.equal(evaluateHumanReviewGate({
     hasLabel: true,

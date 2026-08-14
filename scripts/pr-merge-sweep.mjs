@@ -6,7 +6,7 @@
 // 确定性门禁全过才合并；不使用规模、作者、产品方向或 reviewer 缺席等主观分类。
 //
 // 用法：
-//   node scripts/pr-merge-sweep.mjs [--dry-run] [--repo owner/name] [--pr <number>]
+//   node scripts/pr-merge-sweep.mjs [--dry-run] [--repo owner/name] [--pr <number>] [--expected-head <sha>]
 // 鉴权：走本机 gh CLI 登录态（执行者本人身份），无需额外 token。
 //
 // 2026-08-05 起的混合模式分工：定时任务先跑 --dry-run 拿到过全部硬门禁的候选，
@@ -30,6 +30,7 @@ import { flattenPaginatedPages } from './github-pagination.mjs'
 import {
   buildMergeArgs,
   classifyMergeOutcome,
+  matchesExpectedHead,
   shouldRequireUpToDate,
   shouldUseAdmin,
 } from './merge-execution-policy.mjs'
@@ -40,8 +41,18 @@ const repoArgIdx = process.argv.indexOf('--repo')
 const ONLY_REPO = repoArgIdx > -1 ? process.argv[repoArgIdx + 1] : null
 const prArgIdx = process.argv.indexOf('--pr')
 const ONLY_PR = prArgIdx > -1 ? Number(process.argv[prArgIdx + 1]) : null
+const expectedHeadIdx = process.argv.indexOf('--expected-head')
+const EXPECTED_HEAD = expectedHeadIdx > -1 ? process.argv[expectedHeadIdx + 1] : null
 if (ONLY_PR !== null && (!Number.isInteger(ONLY_PR) || !ONLY_REPO)) {
   console.error('--pr 需要一个整数且必须与 --repo 同用')
+  process.exit(1)
+}
+if (EXPECTED_HEAD && (!ONLY_PR || !/^[0-9a-f]{40}$/i.test(EXPECTED_HEAD))) {
+  console.error('--expected-head 需要与 --repo/--pr 同用，且必须是完整 40 位 SHA')
+  process.exit(1)
+}
+if (!DRY_RUN && ONLY_PR !== null && !EXPECTED_HEAD) {
+  console.error('定点实合并必须传 --expected-head <本机 AI 已审过的 40 位 SHA>')
   process.exit(1)
 }
 
@@ -85,29 +96,32 @@ function collaboratorPermission(repo, login) {
   }
 }
 
-function reviewDismissalTimes(repo, prNumber) {
+function reviewDismissalInfo(repo, prNumber) {
   const [owner, name] = repo.split('/')
-  const dismissedAtByReviewId = new Map()
+  const dismissalByReviewId = new Map()
   let cursor = null
   let hasNextPage = true
   while (hasNextPage) {
     const after = cursor ? `, after: ${JSON.stringify(cursor)}` : ''
     const query = `query { repository(owner: "${owner}", name: "${name}") {
       pullRequest(number: ${prNumber}) { timelineItems(first: 100${after}, itemTypes: [REVIEW_DISMISSED_EVENT]) {
-        nodes { ... on ReviewDismissedEvent { createdAt review { databaseId } } }
+        nodes { ... on ReviewDismissedEvent { createdAt previousReviewState review { databaseId } } }
         pageInfo { hasNextPage endCursor }
       } } } }`
     const timeline = ghJson(['api', 'graphql', '-f', `query=${query}`])
       .data.repository.pullRequest.timelineItems
     for (const event of timeline.nodes) {
       if (event.review?.databaseId) {
-        dismissedAtByReviewId.set(event.review.databaseId, event.createdAt)
+        dismissalByReviewId.set(event.review.databaseId, {
+          dismissedAt: event.createdAt,
+          previousState: event.previousReviewState,
+        })
       }
     }
     hasNextPage = timeline.pageInfo.hasNextPage
     cursor = timeline.pageInfo.endCursor
   }
-  return dismissedAtByReviewId
+  return dismissalByReviewId
 }
 
 function humanReviewGate(repo, pr) {
@@ -131,16 +145,20 @@ function humanReviewGate(repo, pr) {
   const reviews = ghJsonPaginated([
     'api', `repos/${repo}/pulls/${pr.number}/reviews`,
   ])
-  const dismissedAtByReviewId = reviewDismissalTimes(repo, pr.number)
-  const normalizedReviews = reviews.map((review) => ({
+  const dismissalByReviewId = reviewDismissalInfo(repo, pr.number)
+  const normalizedReviews = reviews.map((review) => {
+    const dismissal = dismissalByReviewId.get(review.id)
+    return {
     id: review.id,
     login: review.user?.login || '',
     permission: collaboratorPermission(repo, review.user?.login || ''),
     state: review.state || '',
     commit_id: review.commit_id || '',
     submitted_at: review.submitted_at,
-    dismissed_at: dismissedAtByReviewId.get(review.id) || null,
-  }))
+    dismissed_at: dismissal?.dismissedAt || null,
+    dismissed_previous_state: dismissal?.previousState || null,
+  }
+  })
   return evaluateHumanReviewGate({
     hasLabel,
     authorLogin,
@@ -329,6 +347,10 @@ for (const repo of REPOS) {
       continue
     }
     if (ONLY_PR !== null && pr.number !== ONLY_PR) continue
+    if (EXPECTED_HEAD && !matchesExpectedHead(EXPECTED_HEAD, pr.headRefOid)) {
+      skip(`head 已变化：expected=${EXPECTED_HEAD} actual=${pr.headRefOid}`)
+      continue
+    }
     const candidate = evaluateCandidate(repo, pr)
     if (!candidate.satisfied) { skip(candidate.reason); continue }
     const { isBot } = candidate
@@ -336,7 +358,7 @@ for (const repo of REPOS) {
 
     const method = isBot ? '--squash' : '--merge'
     if (DRY_RUN) {
-      console.log(`${tag} WOULD MERGE (${method}) — ${pr.title}`)
+      console.log(`${tag} WOULD MERGE (${method}) head=${pr.headRefOid} — ${pr.title}`)
       continue
     }
     try {

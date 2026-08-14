@@ -83,8 +83,9 @@ export function evaluateHumanReviewGate({
   for (let index = 0; index < reviews.length; index++) {
     const review = reviews[index]
     if (!hasReviewPermission(review.permission)) continue
+    const dismissedPreviousState = String(review.dismissed_previous_state || '').toUpperCase()
     const state = review.dismissed_at
-      ? 'DISMISSED'
+      ? (dismissedPreviousState === 'CHANGES_REQUESTED' ? 'CHANGES_REQUESTED' : 'DISMISSED')
       : String(review.state || '').toUpperCase()
     if (!DECISIVE_REVIEW_STATES.has(state)) continue
     const login = String(review.login || '').toLowerCase()

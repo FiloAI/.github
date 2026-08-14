@@ -56,14 +56,27 @@ export function evaluateHumanReviewGate({
   hasLabel,
   authorLogin,
   authorPermission,
+  headOid,
   headCommittedAt,
-  comments,
+  reviews = [],
+  comments = [],
 }) {
   if (!hasLabel) return { satisfied: true, reason: null }
   if (hasReviewPermission(authorPermission)) {
     return {
       satisfied: true,
       reason: `作者 ${authorLogin} 具备 ${authorPermission} 权限，无需自我确认`,
+    }
+  }
+
+  for (let index = reviews.length - 1; index >= 0; index--) {
+    const review = reviews[index]
+    if (String(review.commit_id || '').toLowerCase() !== String(headOid || '').toLowerCase()) continue
+    if (String(review.state || '').toUpperCase() !== 'APPROVED') continue
+    if (!hasReviewPermission(review.permission)) continue
+    return {
+      satisfied: true,
+      reason: `${review.login}（${review.permission}）已批准当前 head`,
     }
   }
 

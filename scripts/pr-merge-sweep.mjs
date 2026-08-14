@@ -3,7 +3,7 @@
 //
 // 背景：2026-08-05 起全组织停用仓库侧 bot 自动合并；合并由 owner 权限的人
 // （zqchris / jerboy 等）的定时 agent 执行本脚本完成。设计对齐 cindy MagicLizi：
-// 确定性门禁全过才合并，任何不确定 → 跳过并说明原因，绝不硬合。
+// 确定性门禁全过才合并；不使用规模、作者、产品方向或 reviewer 缺席等主观分类。
 //
 // 用法：
 //   node scripts/pr-merge-sweep.mjs [--dry-run] [--repo owner/name] [--pr <number>]
@@ -15,18 +15,17 @@
 // 裸跑（无 --pr）仍是全量模式，仅供人工兜底，常规链路不再直接用。
 //
 // 每个候选 PR 的门禁（全部满足才合并）：
-//   1. 非 draft、base 在该仓允许列表内（见 REPO_BASES）、无 no-automerge 标签、无合并冲突
-//   2. required check `summary` = success
-//   3. `Greptile Review` check（若存在）= success
-//   4. 人类作者 PR：Greptile Confidence 评论必须存在且 ≥ 4/5，且必须有
-//      Codex（chatgpt-codex-connector[bot]）review——缺任一 = 跳过。
-//      （2026-08-05 实踩：#3256 在 Greptile 完全缺席时被旧逻辑放行，零 review 合入。）
-//      bot 作者 PR（如版本 bump）豁免此条，靠 summary + 终审 agent 的文件白名单判据。
-//   5. 0 个未解决 review thread（不分作者，bot 的也算——回复完必须 resolve）
+//   1. 非 draft、base 在允许列表、无 no-automerge、mergeable=MERGEABLE
+//   2. required aggregate check `summary` = success
+//   3. 人类作者 PR 有绑定当前 head 的 Codex 结论
+//   4. 0 个未解决 review thread
+//   5. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
+// Greptile、Confidence、改动规模、作者身份分级与产品/视觉分类均不是合并门禁。
 // 合并方式：bot 作者 squash，人类作者 merge commit（与 frontend 既有约定一致）。
 // 每仓每轮最多合并 MAX_MERGES_PER_REPO 个、串行执行——保护打包机队列。
 
 import { execFileSync } from 'node:child_process'
+import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
 
@@ -53,8 +52,6 @@ const REPO_BASES = {
 const REPOS = Object.keys(REPO_BASES)
 const MAX_MERGES_PER_REPO = 3
 const REQUIRED_CHECK = 'summary'
-const GREPTILE_CHECK = 'Greptile Review'
-const MIN_CONFIDENCE = 4
 
 function gh(args, opts = {}) {
   return execFileSync('gh', args, { encoding: 'utf8', ...opts })
@@ -102,58 +99,36 @@ function humanReviewGate(repo, pr) {
     body: comment.body || '',
     created_at: comment.created_at,
   }))
+  const reviews = ghJsonPaginated([
+    'api', `repos/${repo}/pulls/${pr.number}/reviews`,
+  ]).map((review) => ({
+    login: review.user?.login || '',
+    permission: collaboratorPermission(repo, review.user?.login || ''),
+    state: review.state || '',
+    commit_id: review.commit_id || '',
+  }))
   return evaluateHumanReviewGate({
     hasLabel,
     authorLogin,
     authorPermission,
+    headOid: pr.headRefOid,
     headCommittedAt,
+    reviews,
     comments,
   })
 }
 
-function latestConfidence(repo, prNumber) {
-  // Greptile 每轮复审都会发含 Confidence Score 的评论，取最新一条
-  const comments = ghJsonPaginated([
-    'api', `repos/${repo}/issues/${prNumber}/comments`,
-  ]).filter((comment) => comment.user?.login === 'greptile-apps[bot]')
-  for (let i = comments.length - 1; i >= 0; i--) {
-    const m = comments[i].body.match(/confidence\s*score[:\s]*([0-5])\s*\/\s*5/i)
-    if (m) return Number(m[1])
-  }
-  return null
-}
-
-const CODEX_LOGINS = ['chatgpt-codex-connector[bot]', 'chatgpt-codex-connector']
-
-function hasCodexReview(repo, prNumber) {
+function hasCodexReview(repo, prNumber, headOid) {
   const reviews = ghJsonPaginated([
     'api', `repos/${repo}/pulls/${prNumber}/reviews`,
   ])
-  if (reviews.some((review) => CODEX_LOGINS.includes(review.user?.login))) return true
-  // Codex 无 major issue 时可能只发 issue comment（「Codex Review: Didn't find any
-  // major issues」形态，不产生正式 review——2026-08-06 .github#15 实踩：干净 PR 因此
-  // 永远过不了本门禁）。评论形态只认两个条件同时成立：
-  // ① connector 本人发的**明确成功结论**（Didn't find any major issues）——失败、
-  //    进度、负面结果不算，防止任意含“Codex Review”字样的文本绕过门禁；
-  // ② 评论正文声明的「Reviewed commit」SHA 必须就是当前 head（headRefOid，服务端
-  //    事实）——不用 committedDate 之类 author 可控时间戳推断新鲜度，天然免疫
-  //    「本地已产新 head→评论发布→再 push」的竞态：push 后 headRefOid 变化，
-  //    旧结论立即失效。评论不带 SHA 的一律不认。
-  // 按作者过滤，人类发的「@codex review」召唤评论不会误判。
-  const [owner, name] = repo.split('/')
-  const headQ = `query { repository(owner: "${owner}", name: "${name}") {
-    pullRequest(number: ${prNumber}) { headRefOid } } }`
-  const headOid = ghJson(['api', 'graphql', '-f', `query=${headQ}`])
-    .data.repository.pullRequest.headRefOid.toLowerCase()
   const comments = ghJsonPaginated([
     'api', `repos/${repo}/issues/${prNumber}/comments`,
-  ]).map((comment) => ({ login: comment.user?.login, body: comment.body }))
-  return comments.some((c) => {
-    if (!CODEX_LOGINS.includes(c.login)) return false
-    const body = c.body || ''
-    if (!/didn'?t find any major issues/i.test(body)) return false
-    const m = body.match(/reviewed commit[^0-9a-f]*([0-9a-f]{7,40})/i)
-    return !!m && headOid.startsWith(m[1].toLowerCase())
+  ])
+  return hasCurrentHeadCodexReview({
+    reviews,
+    comments,
+    headOid,
   })
 }
 
@@ -183,7 +158,7 @@ for (const repo of REPOS) {
   let prs
   try {
     prs = ghJson([
-      'pr', 'list', '--repo', repo, '--state', 'open', '--json',
+      'pr', 'list', '--repo', repo, '--state', 'open', '--limit', '100', '--json',
       'number,title,isDraft,baseRefName,labels,author,mergeable,headRefOid',
     ])
   } catch (e) {
@@ -201,13 +176,7 @@ for (const repo of REPOS) {
     if (pr.isDraft) { skip('draft'); continue }
     if (!REPO_BASES[repo].includes(pr.baseRefName)) { skip(`base=${pr.baseRefName} 不在允许列表 [${REPO_BASES[repo]}]`); continue }
     if (pr.labels.some((l) => l.name === 'no-automerge')) { skip('no-automerge 标签'); continue }
-    // needs-human-review 不是永久锁：作者本人具备 review 权限时自动满足，不要求
-    // 自我 approve/留言；否则当前 head 后任一有 review 权限的人用自然语言明确
-    // 表达「同意/确认/可以/合并/LGTM」即可。标签残留不能覆盖实时确认事实。
-    const humanGate = humanReviewGate(repo, pr)
-    if (!humanGate.satisfied) { skip(humanGate.reason); continue }
-    if (humanGate.reason) console.log(`${tag} HUMAN GATE SATISFIED: ${humanGate.reason}`)
-    if (pr.mergeable === 'CONFLICTING') { skip('合并冲突'); continue }
+    if (pr.mergeable !== 'MERGEABLE') { skip(`mergeable=${pr.mergeable}`); continue }
     if (merged >= MAX_MERGES_PER_REPO) { skip('本轮配额已满'); continue }
 
     const checks = checkConclusions(repo, pr.headRefOid)
@@ -215,37 +184,20 @@ for (const repo of REPOS) {
     if (!summary || summary.status !== 'completed' || summary.conclusion !== 'success') {
       skip(`summary=${summary ? `${summary.status}/${summary.conclusion}` : '缺失'}`); continue
     }
-    const greptile = checks[GREPTILE_CHECK]
-    if (greptile && (greptile.status !== 'completed' || greptile.conclusion !== 'success')) {
-      skip(`Greptile Review=${greptile.status}/${greptile.conclusion}`); continue
-    }
     const isBot = pr.author?.is_bot || /\[bot\]$/.test(pr.author?.login ?? '')
-    // Confidence 门禁：凭评论判定（filo-www 上 Greptile 无 check run，2026-08-05 实查）。
-    // 人类 PR：Greptile Confidence 与 Codex review 都必须存在——缺席 ≠ 放行
-    // （2026-08-05 实踩：#3256 零 review 被旧的"缺席即跳过验证"逻辑合入）。
-    // bot PR（版本 bump 等）豁免双 review 硬门禁，由终审 agent 按文件白名单严判。
-    const conf = latestConfidence(repo, pr.number)
-    if (conf !== null && conf < MIN_CONFIDENCE) { skip(`Confidence ${conf}/5 < ${MIN_CONFIDENCE}`); continue }
-    if (!isBot) {
-      if (conf === null) { skip('人类 PR 缺 Greptile Confidence 评论（AI review 未完成）'); continue }
-      if (!hasCodexReview(repo, pr.number)) { skip('人类 PR 缺 Codex review'); continue }
-    } else if (greptile && conf === null) {
-      skip('Greptile check 存在但解析不到 Confidence Score'); continue
+    if (!isBot && !hasCodexReview(repo, pr.number, pr.headRefOid)) {
+      skip('当前 head 缺 Codex 结论'); continue
     }
     const unresolved = unresolvedThreads(repo, pr.number)
     if (unresolved > 0) { skip(`${unresolved} 个未解决 review thread`); continue }
+    // needs-human-review 只在其它技术硬门禁全部满足后判断，避免为冲突/红 CI PR
+    // 额外调用权限与评论 API。作者具备 write+ 权限时自动满足；否则接受当前
+    // head 的正式 approve，或有权限者在该 head 后给出的自然语言确认。
+    const humanGate = humanReviewGate(repo, pr)
+    if (!humanGate.satisfied) { skip(humanGate.reason); continue }
+    if (humanGate.reason) console.log(`${tag} HUMAN GATE SATISFIED: ${humanGate.reason}`)
 
     const method = isBot ? '--squash' : '--merge'
-    if (!DRY_RUN) {
-      // 第三方签核留痕：合并前以执行者身份 approve（作者是执行者本人时 GitHub
-      // 会拒绝 approve 自己的 PR——吞掉即可，bypass 合并不依赖这一步）。
-      try {
-        gh(['pr', 'review', String(pr.number), '--repo', repo, '--approve',
-          '--body', 'owner sweep 终审通过（硬门禁全过 + 本机 AI 内容终审）'])
-      } catch {
-        console.log(`${tag} approve 留痕跳过（作者即执行者或已 approve）`)
-      }
-    }
     if (DRY_RUN) {
       console.log(`${tag} WOULD MERGE (${method}) — ${pr.title}`)
       merged++
@@ -256,8 +208,16 @@ for (const repo of REPOS) {
       // （update 限制 + approvals≥1）后，普通合并调用即使是 bypass 名单成员也会被
       // base branch policy 拒绝（21:07/22:07 两轮实踩）；admin 合并才走 bypass 通道。
       // 门禁不受影响——本脚本只会走到这里当且仅当全部硬门禁 + AI 终审已通过。
-      gh(['pr', 'merge', String(pr.number), '--repo', repo, method, '--admin'])
-      console.log(`${tag} MERGED (${method}) — ${pr.title}`)
+      gh(['pr', 'merge', String(pr.number), '--repo', repo, method, '--admin',
+        '--match-head-commit', pr.headRefOid])
+      const mergedPr = ghJson([
+        'pr', 'view', String(pr.number), '--repo', repo, '--json',
+        'state,mergedAt,mergeCommit',
+      ])
+      if (mergedPr.state !== 'MERGED' || !mergedPr.mergedAt) {
+        throw new Error(`合并命令返回但 live state=${mergedPr.state}`)
+      }
+      console.log(`${tag} MERGED (${method}) commit=${mergedPr.mergeCommit?.oid || 'unknown'} — ${pr.title}`)
       merged++
       totalMerged++
     } catch (e) {

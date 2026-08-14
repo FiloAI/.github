@@ -72,6 +72,38 @@ test('当前 head 后有权限者回复“确认”即可放行', () => {
   }).satisfied, true)
 })
 
+test('当前 head 的正式批准直接满足人工门禁', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'abc1234',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    reviews: [{
+      login: 'reviewer',
+      permission: 'write',
+      state: 'APPROVED',
+      commit_id: 'abc1234',
+    }],
+  }).satisfied, true)
+})
+
+test('旧 head 的正式批准不能放行新 head', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'new1234',
+    headCommittedAt: Date.parse('2026-08-14T00:02:00Z'),
+    reviews: [{
+      login: 'reviewer',
+      permission: 'write',
+      state: 'APPROVED',
+      commit_id: 'old1234',
+    }],
+  }).satisfied, false)
+})
+
 test('旧 head 的确认不能放行新 head', () => {
   assert.equal(evaluateHumanReviewGate({
     hasLabel: true,

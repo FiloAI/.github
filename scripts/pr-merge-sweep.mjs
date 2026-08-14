@@ -16,7 +16,7 @@
 //
 // 每个候选 PR 的门禁（全部满足才合并）：
 //   1. 非 draft、base 在允许列表、无 no-automerge、mergeable=MERGEABLE
-//   2. required aggregate check `summary` = success
+//   2. 当前 base ruleset 声明的全部 required status checks = success（没有则不虚构）
 //   3. 人类作者 PR 有绑定当前 head 的 Codex 结论
 //   4. 0 个未解决 review thread
 //   5. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
@@ -28,6 +28,7 @@ import { execFileSync } from 'node:child_process'
 import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
+import { evaluateRequiredChecks } from './required-check-gate.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
 const repoArgIdx = process.argv.indexOf('--repo')
@@ -50,8 +51,6 @@ const REPO_BASES = {
   'FiloAI/filo-issue-bot': ['main'], // 反馈分诊 bot
 }
 const REPOS = Object.keys(REPO_BASES)
-const MAX_MERGES_PER_REPO = 3
-const REQUIRED_CHECK = 'summary'
 
 function gh(args, opts = {}) {
   return execFileSync('gh', args, { encoding: 'utf8', ...opts })
@@ -106,6 +105,7 @@ function humanReviewGate(repo, pr) {
     permission: collaboratorPermission(repo, review.user?.login || ''),
     state: review.state || '',
     commit_id: review.commit_id || '',
+    submitted_at: review.submitted_at,
   }))
   return evaluateHumanReviewGate({
     hasLabel,
@@ -147,7 +147,50 @@ function checkConclusions(repo, sha) {
   // 同名 check 取最新（API 返回按时间倒序，first-wins）
   const byName = {}
   for (const r of runs) if (!(r.name in byName)) byName[r.name] = r
+  const combined = ghJson([
+    'api', `repos/${repo}/commits/${sha}/status`,
+  ])
+  for (const status of combined.statuses || []) {
+    if (status.context in byName) continue
+    byName[status.context] = {
+      name: status.context,
+      status: 'completed',
+      conclusion: status.state === 'success' ? 'success' : status.state,
+    }
+  }
   return byName
+}
+
+const requiredCheckCache = new Map()
+
+function requiredCheckNames(repo, baseRefName) {
+  const key = `${repo}:${baseRefName}`
+  if (requiredCheckCache.has(key)) return requiredCheckCache.get(key)
+  const rules = ghJson([
+    'api', `repos/${repo}/rules/branches/${encodeURIComponent(baseRefName)}`,
+  ])
+  const names = [...new Set(rules
+    .filter((rule) => rule.type === 'required_status_checks')
+    .flatMap((rule) => rule.parameters?.required_status_checks || [])
+    .map((check) => check.context)
+    .filter(Boolean))]
+  requiredCheckCache.set(key, names)
+  return names
+}
+
+function requiredChecksGate(repo, pr) {
+  const names = requiredCheckNames(repo, pr.baseRefName)
+  const checks = checkConclusions(repo, pr.headRefOid)
+  return evaluateRequiredChecks({ requiredNames: names, checks })
+}
+
+function refreshMergeability(repo, pr) {
+  if (pr.mergeable !== 'UNKNOWN') return pr
+  const live = ghJson([
+    'pr', 'view', String(pr.number), '--repo', repo, '--json',
+    'number,title,isDraft,baseRefName,labels,author,mergeable,headRefOid',
+  ])
+  return { ...pr, ...live }
 }
 
 let totalMerged = 0
@@ -165,8 +208,8 @@ for (const repo of REPOS) {
     console.log(`[${repo}] 列表拉取失败：${e.message}`)
     continue
   }
-  let merged = 0
-  for (const pr of prs) {
+  for (const listedPr of prs) {
+    const pr = refreshMergeability(repo, listedPr)
     if (ONLY_PR !== null && pr.number !== ONLY_PR) continue
     const tag = `[${repo}#${pr.number}]`
     const skip = (why) => {
@@ -177,13 +220,9 @@ for (const repo of REPOS) {
     if (!REPO_BASES[repo].includes(pr.baseRefName)) { skip(`base=${pr.baseRefName} 不在允许列表 [${REPO_BASES[repo]}]`); continue }
     if (pr.labels.some((l) => l.name === 'no-automerge')) { skip('no-automerge 标签'); continue }
     if (pr.mergeable !== 'MERGEABLE') { skip(`mergeable=${pr.mergeable}`); continue }
-    if (merged >= MAX_MERGES_PER_REPO) { skip('本轮配额已满'); continue }
 
-    const checks = checkConclusions(repo, pr.headRefOid)
-    const summary = checks[REQUIRED_CHECK]
-    if (!summary || summary.status !== 'completed' || summary.conclusion !== 'success') {
-      skip(`summary=${summary ? `${summary.status}/${summary.conclusion}` : '缺失'}`); continue
-    }
+    const requiredGate = requiredChecksGate(repo, pr)
+    if (!requiredGate.satisfied) { skip(requiredGate.reason); continue }
     const isBot = pr.author?.is_bot || /\[bot\]$/.test(pr.author?.login ?? '')
     if (!isBot && !hasCodexReview(repo, pr.number, pr.headRefOid)) {
       skip('当前 head 缺 Codex 结论'); continue
@@ -200,7 +239,6 @@ for (const repo of REPOS) {
     const method = isBot ? '--squash' : '--merge'
     if (DRY_RUN) {
       console.log(`${tag} WOULD MERGE (${method}) — ${pr.title}`)
-      merged++
       continue
     }
     try {
@@ -218,7 +256,6 @@ for (const repo of REPOS) {
         throw new Error(`合并命令返回但 live state=${mergedPr.state}`)
       }
       console.log(`${tag} MERGED (${method}) commit=${mergedPr.mergeCommit?.oid || 'unknown'} — ${pr.title}`)
-      merged++
       totalMerged++
     } catch (e) {
       console.log(`${tag} MERGE FAILED: ${String(e.message).slice(0, 200)}`)

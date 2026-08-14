@@ -69,11 +69,22 @@ export function evaluateHumanReviewGate({
     }
   }
 
-  for (let index = reviews.length - 1; index >= 0; index--) {
+  const latestReviewByLogin = new Map()
+  for (let index = 0; index < reviews.length; index++) {
     const review = reviews[index]
     if (String(review.commit_id || '').toLowerCase() !== String(headOid || '').toLowerCase()) continue
-    if (String(review.state || '').toUpperCase() !== 'APPROVED') continue
     if (!hasReviewPermission(review.permission)) continue
+    const login = String(review.login || '').toLowerCase()
+    if (!login) continue
+    const submittedAt = Date.parse(review.submitted_at) || 0
+    const previous = latestReviewByLogin.get(login)
+    if (!previous || submittedAt > previous.submittedAt || (submittedAt === previous.submittedAt && index > previous.index)) {
+      latestReviewByLogin.set(login, { review, submittedAt, index })
+    }
+  }
+
+  for (const { review } of latestReviewByLogin.values()) {
+    if (String(review.state || '').toUpperCase() !== 'APPROVED') continue
     return {
       satisfied: true,
       reason: `${review.login}（${review.permission}）已批准当前 head`,

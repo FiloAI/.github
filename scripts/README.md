@@ -11,9 +11,11 @@ node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend   # 只扫一个�
 node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 # 定点合并
 ```
 
-门禁（全过才合并）：非 draft + base 在仓库允许列表 + 无 `no-automerge` + `mergeable=MERGEABLE` + `summary` 绿 + 人类 PR 有绑定当前 head 的 Codex 结论 + 0 未解决 review thread。若 PR 带 `needs-human-review`，作者有 write 及以上权限时自动满足；否则接受当前 head 的正式 approve，或有权限者在当前 head 后给出的明确自然语言确认。
+门禁（全过才合并）：非 draft + base 在仓库允许列表 + 无 `no-automerge` + `mergeable=MERGEABLE` + 当前 base ruleset 声明的全部 required checks 绿 + 人类 PR 有绑定当前 head 的 Codex 结论 + 0 未解决 review thread。没有 required checks 的仓库不虚构 `summary`；若 PR 带 `needs-human-review`，作者有 write 及以上权限时自动满足，否则接受当前 head 的正式 approve，或有权限者在当前 head 后给出的明确自然语言确认。
 
 不属于门禁：Greptile/Confidence、PR 大小、commit 数、作者身份分级、feat/fix 类型、视觉或产品方向分类。它们可以作为信息，但不得让一个已满足上述硬门禁的 PR 等人。
+
+列表接口暂时返回 `mergeable=UNKNOWN` 时会立即回读该 PR 的实时状态，不会把旧 PR 永久跳过；满足门禁的 PR 也不再受每仓固定合并配额限制。
 
 脚本不会自动 approve、不会写“终审意见”、不会创建“团队待办”。实际合并使用 `--match-head-commit` 绑定 dry-run 所见 head，合并后回读 `state=MERGED` 和 merge commit。
 

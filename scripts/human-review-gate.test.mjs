@@ -104,6 +104,66 @@ test('旧 head 的正式批准不能放行新 head', () => {
   }).satisfied, false)
 })
 
+test('同一 reviewer 后续要求修改会覆盖旧批准', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'abc1234',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    reviews: [
+      {
+        login: 'reviewer', permission: 'write', state: 'APPROVED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:01:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write', state: 'CHANGES_REQUESTED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:02:00Z',
+      },
+    ],
+  }).satisfied, false)
+})
+
+test('同一 reviewer 的批准被 dismissed 后不再生效', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'abc1234',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    reviews: [
+      {
+        login: 'reviewer', permission: 'write', state: 'APPROVED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:01:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write', state: 'DISMISSED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:02:00Z',
+      },
+    ],
+  }).satisfied, false)
+})
+
+test('另一位有权限 reviewer 的最新批准仍可满足门禁', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'abc1234',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    reviews: [
+      {
+        login: 'reviewer-a', permission: 'write', state: 'CHANGES_REQUESTED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:02:00Z',
+      },
+      {
+        login: 'reviewer-b', permission: 'maintain', state: 'APPROVED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:03:00Z',
+      },
+    ],
+  }).satisfied, true)
+})
+
 test('旧 head 的确认不能放行新 head', () => {
   assert.equal(evaluateHumanReviewGate({
     hasLabel: true,

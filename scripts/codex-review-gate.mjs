@@ -3,22 +3,30 @@ export const CODEX_LOGINS = new Set([
   'chatgpt-codex-connector',
 ])
 
-const REVIEW_STATES = new Set(['APPROVED', 'COMMENTED'])
-
 function sameCommit(candidate, headOid) {
   const candidateOid = String(candidate || '').toLowerCase()
   const head = String(headOid || '').toLowerCase()
   return candidateOid.length >= 7 && head.length >= 7 && candidateOid === head
 }
 
+function isStandardCodexCommentedReview(body, headOid) {
+  const match = String(body || '').match(
+    /^\s*### 💡 Codex Review\s+Here are some automated review suggestions for this pull request\.\s+\*\*Reviewed commit:\*\*\s*`([0-9a-f]{7,40})`\s*(?:<details>[\s\S]*<\/details>)?\s*$/,
+  )
+  return Boolean(match && String(headOid || '').toLowerCase().startsWith(match[1].toLowerCase()))
+}
+
 export function hasCurrentHeadCodexReview({ reviews = [], comments = [], headOid }) {
   const head = String(headOid || '').toLowerCase()
   if (!head) return false
 
-  const formalReview = reviews.some((review) =>
-    CODEX_LOGINS.has(review.user?.login || review.login || '')
-      && REVIEW_STATES.has(String(review.state || '').toUpperCase())
-      && sameCommit(review.commit_id || review.commitOid, head))
+  const formalReview = reviews.some((review) => {
+    if (!CODEX_LOGINS.has(review.user?.login || review.login || '')) return false
+    if (!sameCommit(review.commit_id || review.commitOid, head)) return false
+    const state = String(review.state || '').toUpperCase()
+    if (state === 'APPROVED') return true
+    return state === 'COMMENTED' && isStandardCodexCommentedReview(review.body, head)
+  })
   if (formalReview) return true
 
   return comments.some((comment) => {

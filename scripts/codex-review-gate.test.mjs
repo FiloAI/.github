@@ -6,12 +6,23 @@ import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 const HEAD = 'd669ace540e8d58c8c2817aaa453c4c3308551f1'
 
 test('只接受当前 head 的正式 Codex review', () => {
+  const body = `
+### 💡 Codex Review
+
+Here are some automated review suggestions for this pull request.
+
+**Reviewed commit:** \`${HEAD.slice(0, 10)}\`
+
+<details><summary>ℹ️ About Codex in GitHub</summary>
+standard boilerplate
+</details>`
   assert.equal(hasCurrentHeadCodexReview({
     headOid: HEAD,
     reviews: [{
       user: { login: 'chatgpt-codex-connector[bot]' },
       state: 'COMMENTED',
       commit_id: HEAD,
+      body,
     }],
   }), true)
 
@@ -21,8 +32,33 @@ test('只接受当前 head 的正式 Codex review', () => {
       user: { login: 'chatgpt-codex-connector[bot]' },
       state: 'COMMENTED',
       commit_id: '876dc7fd3896feeb4fd6df7d7290636853339ee2',
+      body,
     }],
   }), false)
+})
+
+test('Codex 顶层待修文字不能冒充标准结论', () => {
+  assert.equal(hasCurrentHeadCodexReview({
+    headOid: HEAD,
+    reviews: [{
+      user: { login: 'chatgpt-codex-connector[bot]' },
+      state: 'COMMENTED',
+      commit_id: HEAD,
+      body: 'Please fix the merge race before merging.',
+    }],
+  }), false)
+})
+
+test('Codex 正式 APPROVED 仍可直接作为当前 head 结论', () => {
+  assert.equal(hasCurrentHeadCodexReview({
+    headOid: HEAD,
+    reviews: [{
+      user: { login: 'chatgpt-codex-connector[bot]' },
+      state: 'APPROVED',
+      commit_id: HEAD,
+      body: '',
+    }],
+  }), true)
 })
 
 test('无问题评论必须明确绑定当前 head', () => {

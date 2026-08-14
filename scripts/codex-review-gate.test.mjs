@@ -179,6 +179,22 @@ test('同一行装饰尾句含否定或待修语义时拒绝', () => {
   }), false)
 })
 
+test('同一行装饰尾句含等待或 pending 流程语义时拒绝', () => {
+  for (const suffix of [
+    'Please wait for the security review.',
+    'Hold off while approval is pending.',
+    '稍后检查完成后再处理。',
+  ]) {
+    const body = `Codex Review: Didn't find any major issues. ${suffix}
+
+**Reviewed commit:** \`${HEAD.slice(0, 12)}\``
+    assert.equal(hasCurrentHeadCodexReview({
+      headOid: HEAD,
+      comments: [{ user: { login: 'chatgpt-codex-connector[bot]' }, body }],
+    }), false, suffix)
+  }
+})
+
 test('无问题评论夹带待修文字不能冒充结论', () => {
   const body = `Codex Review: Didn't find any major issues. :+1:
 

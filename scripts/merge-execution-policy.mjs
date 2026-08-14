@@ -16,3 +16,7 @@ export function classifyMergeOutcome(pr) {
 export function shouldUseAdmin({ strict = false, mergeQueue = false }) {
   return !strict && !mergeQueue
 }
+
+export function shouldRequireUpToDate({ strict = false, mergeQueue = false }) {
+  return strict && !mergeQueue
+}

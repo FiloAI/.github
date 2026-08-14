@@ -27,7 +27,12 @@ import { execFileSync } from 'node:child_process'
 import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
-import { buildMergeArgs, classifyMergeOutcome, shouldUseAdmin } from './merge-execution-policy.mjs'
+import {
+  buildMergeArgs,
+  classifyMergeOutcome,
+  shouldRequireUpToDate,
+  shouldUseAdmin,
+} from './merge-execution-policy.mjs'
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
@@ -230,7 +235,9 @@ function requiredChecksGate(repo, pr) {
   const checks = checkConclusions(repo, pr.headRefOid)
   const checkGate = evaluateRequiredChecks({ requirements: config.requirements, checks })
   if (!checkGate.satisfied) return { ...checkGate, strict: config.strict, mergeQueue: config.mergeQueue }
-  if (!config.strict) return { ...checkGate, strict: false, mergeQueue: config.mergeQueue }
+  if (!shouldRequireUpToDate(config)) {
+    return { ...checkGate, strict: config.strict, mergeQueue: config.mergeQueue }
+  }
   const comparison = ghJson([
     'api', `repos/${repo}/compare/${encodeURIComponent(pr.baseRefName)}...${pr.headRefOid}`,
   ])

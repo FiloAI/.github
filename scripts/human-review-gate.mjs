@@ -121,7 +121,10 @@ export function evaluateHumanReviewGate({
 
   for (const [login, approval] of latestApprovalByLogin) {
     const changeRequest = latestChangeRequestByLogin.get(login)
-    if (changeRequest && changeRequest.submittedAt > approval.submittedAt) continue
+    if (changeRequest
+      && (changeRequest.submittedAt > approval.submittedAt
+        || (changeRequest.submittedAt === approval.submittedAt
+          && changeRequest.index > approval.index))) continue
     return {
       satisfied: true,
       reason: `${approval.review.login}（${approval.review.permission}）已批准当前 head`,

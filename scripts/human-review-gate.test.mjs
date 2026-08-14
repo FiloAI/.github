@@ -124,6 +124,26 @@ test('同一 reviewer 后续要求修改会覆盖旧批准', () => {
   }).satisfied, false)
 })
 
+test('同秒内后出现的 CHANGES_REQUESTED 覆盖旧批准', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'abc1234',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    reviews: [
+      {
+        id: 101, login: 'reviewer', permission: 'write', state: 'APPROVED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:01:00Z',
+      },
+      {
+        id: 102, login: 'reviewer', permission: 'write', state: 'CHANGES_REQUESTED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:01:00Z',
+      },
+    ],
+  }).satisfied, false)
+})
+
 test('同一 reviewer 的批准被 dismissed 后不再生效', () => {
   assert.equal(evaluateHumanReviewGate({
     hasLabel: true,

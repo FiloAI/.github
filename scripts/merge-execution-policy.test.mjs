@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   buildMergeArgs,
   classifyMergeOutcome,
+  shouldRequireUpToDate,
   shouldUseAdmin,
 } from './merge-execution-policy.mjs'
 
@@ -33,4 +34,11 @@ test('strict 或 merge queue 分支都不能使用 admin 绕过', () => {
   assert.equal(shouldUseAdmin({ strict: true, mergeQueue: false }), false)
   assert.equal(shouldUseAdmin({ strict: false, mergeQueue: true }), false)
   assert.equal(shouldUseAdmin({ strict: true, mergeQueue: true }), false)
+})
+
+test('只有不使用 merge queue 的 strict 分支要求入队前与 base 同步', () => {
+  assert.equal(shouldRequireUpToDate({ strict: false, mergeQueue: false }), false)
+  assert.equal(shouldRequireUpToDate({ strict: true, mergeQueue: false }), true)
+  assert.equal(shouldRequireUpToDate({ strict: false, mergeQueue: true }), false)
+  assert.equal(shouldRequireUpToDate({ strict: true, mergeQueue: true }), false)
 })

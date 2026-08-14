@@ -11,9 +11,23 @@ function sameCommit(candidate, headOid) {
 
 function isStandardCodexCommentedReview(body, headOid) {
   const match = String(body || '').match(
-    /^\s*### 💡 Codex Review\s+Here are some automated review suggestions for this pull request\.\s+\*\*Reviewed commit:\*\*\s*`([0-9a-f]{7,40})`\s*(?:<details>[\s\S]*<\/details>)?\s*$/,
+    /^\s*### 💡 Codex Review\s+Here are some automated review suggestions for this pull request\.\s+\*\*Reviewed commit:\*\*\s*`([0-9a-f]{7,40})`\s*([\s\S]*)$/,
   )
-  return Boolean(match && String(headOid || '').toLowerCase().startsWith(match[1].toLowerCase()))
+  if (!match || !String(headOid || '').toLowerCase().startsWith(match[1].toLowerCase())) return false
+  const details = match[2].trim()
+  if (!details) return true
+  const lines = details.split('\n').map((line) => line.trim()).filter(Boolean)
+  return JSON.stringify(lines) === JSON.stringify([
+    '<details> <summary>ℹ️ About Codex in GitHub</summary>',
+    '<br/>',
+    '[Your team has set up Codex to review pull requests in this repo](https://chatgpt.com/codex/cloud/settings/general). Reviews are triggered when you',
+    '- Open a pull request for review',
+    '- Mark a draft as ready',
+    '- Comment "@codex review".',
+    'If Codex has suggestions, it will comment; otherwise it will react with 👍.',
+    'Codex can also answer questions or update the PR. Try commenting "@codex address that feedback".',
+    '</details>',
+  ])
 }
 
 export function hasCurrentHeadCodexReview({ reviews = [], comments = [], headOid }) {

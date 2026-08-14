@@ -6,6 +6,8 @@ function checkTime(check) {
   return Date.parse(check.at || 0) || 0
 }
 
+const PASSING_CONCLUSIONS = new Set(['success', 'neutral', 'skipped'])
+
 export function evaluateRequiredChecks({ requirements = [], checks = [] }) {
   const unique = new Map()
   for (const requirement of requirements) {
@@ -20,7 +22,7 @@ export function evaluateRequiredChecks({ requirements = [], checks = [] }) {
         && (requirement.integrationId == null
           || Number(candidate.integrationId) === Number(requirement.integrationId)))
       .sort((a, b) => checkTime(b) - checkTime(a))[0]
-    return !check || check.status !== 'completed' || check.conclusion !== 'success'
+    return !check || check.status !== 'completed' || !PASSING_CONCLUSIONS.has(check.conclusion)
   })
   if (blocked.length === 0) return { satisfied: true, reason: null }
 

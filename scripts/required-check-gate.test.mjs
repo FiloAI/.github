@@ -66,3 +66,12 @@ test('同一 integration 只认最新 check 状态', () => {
     ],
   }).satisfied, true)
 })
+
+test('GitHub 视为通过的 neutral 与 skipped 不阻塞', () => {
+  for (const conclusion of ['neutral', 'skipped']) {
+    assert.equal(evaluateRequiredChecks({
+      requirements: [{ context: 'summary' }],
+      checks: [{ name: 'summary', status: 'completed', conclusion }],
+    }).satisfied, true, conclusion)
+  }
+})

@@ -1,4 +1,5 @@
 const REVIEW_PERMISSIONS = new Set(['admin', 'maintain', 'write'])
+const DECISIVE_REVIEW_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'])
 
 const EXACT_APPROVALS = new Set([
   '同意',
@@ -72,8 +73,8 @@ export function evaluateHumanReviewGate({
   const latestReviewByLogin = new Map()
   for (let index = 0; index < reviews.length; index++) {
     const review = reviews[index]
-    if (String(review.commit_id || '').toLowerCase() !== String(headOid || '').toLowerCase()) continue
     if (!hasReviewPermission(review.permission)) continue
+    if (!DECISIVE_REVIEW_STATES.has(String(review.state || '').toUpperCase())) continue
     const login = String(review.login || '').toLowerCase()
     if (!login) continue
     const submittedAt = Date.parse(review.submitted_at) || 0
@@ -85,6 +86,7 @@ export function evaluateHumanReviewGate({
 
   for (const { review } of latestReviewByLogin.values()) {
     if (String(review.state || '').toUpperCase() !== 'APPROVED') continue
+    if (String(review.commit_id || '').toLowerCase() !== String(headOid || '').toLowerCase()) continue
     return {
       satisfied: true,
       reason: `${review.login}（${review.permission}）已批准当前 head`,

@@ -164,6 +164,46 @@ test('另一位有权限 reviewer 的最新批准仍可满足门禁', () => {
   }).satisfied, true)
 })
 
+test('跨 commit 的后续否决会阻止旧 head 批准复活', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'commit-a',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    reviews: [
+      {
+        login: 'reviewer', permission: 'write', state: 'APPROVED', commit_id: 'commit-a',
+        submitted_at: '2026-08-14T00:01:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write', state: 'CHANGES_REQUESTED', commit_id: 'commit-b',
+        submitted_at: '2026-08-14T00:02:00Z',
+      },
+    ],
+  }).satisfied, false)
+})
+
+test('COMMENTED 不会撤销 reviewer 已有的当前 head 批准', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'abc1234',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    reviews: [
+      {
+        login: 'reviewer', permission: 'write', state: 'APPROVED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:01:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write', state: 'COMMENTED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:02:00Z',
+      },
+    ],
+  }).satisfied, true)
+})
+
 test('旧 head 的确认不能放行新 head', () => {
   assert.equal(evaluateHumanReviewGate({
     hasLabel: true,

@@ -227,6 +227,18 @@ Codex can also answer questions or update the PR. Try commenting "@codex address
   }
 })
 
+test('未知或负向 emoji shortcode 不算 clean 结论', () => {
+  for (const suffix of [':do_not_merge:', ':warning:', ':hourglass:']) {
+    const body = `Codex Review: Didn't find any major issues. ${suffix}
+
+**Reviewed commit:** \`${HEAD.slice(0, 12)}\``
+    assert.equal(hasCurrentHeadCodexReview({
+      headOid: HEAD,
+      comments: [{ user: { login: 'chatgpt-codex-connector[bot]' }, body }],
+    }), false, suffix)
+  }
+})
+
 test('无问题评论夹带待修文字不能冒充结论', () => {
   const body = `Codex Review: Didn't find any major issues. :+1:
 

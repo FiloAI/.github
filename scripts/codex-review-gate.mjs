@@ -30,6 +30,7 @@ function hasOnlyStandardDetails(details) {
 
 const SAFE_DECORATIVE_SUFFIXES = new Set([
   '',
+  ':+1:',
   'Already looking forward to the next diff.',
   'More of your lovely PRs please.',
   'Swish!',
@@ -37,7 +38,7 @@ const SAFE_DECORATIVE_SUFFIXES = new Set([
 
 function hasSafeDecorativeSuffix(suffix) {
   const text = String(suffix || '').trim()
-  return SAFE_DECORATIVE_SUFFIXES.has(text) || /^:[a-z0-9_+\-]+:$/i.test(text)
+  return SAFE_DECORATIVE_SUFFIXES.has(text)
 }
 
 function isStandardCodexCommentedReview(body, headOid) {

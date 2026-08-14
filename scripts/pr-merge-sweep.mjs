@@ -28,6 +28,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
+import { flattenPaginatedPages } from './github-pagination.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
 const repoArgIdx = process.argv.indexOf('--repo')
@@ -60,6 +61,10 @@ function gh(args, opts = {}) {
 }
 function ghJson(args) {
   return JSON.parse(gh(args))
+}
+
+function ghJsonPaginated(args) {
+  return flattenPaginatedPages(ghJson([...args, '--paginate', '--slurp']))
 }
 
 const permissionCache = new Map()
@@ -108,10 +113,9 @@ function humanReviewGate(repo, pr) {
 
 function latestConfidence(repo, prNumber) {
   // Greptile 每轮复审都会发含 Confidence Score 的评论，取最新一条
-  const comments = ghJson([
-    'api', `repos/${repo}/issues/${prNumber}/comments`, '--paginate',
-    '--jq', '[.[] | select(.user.login == "greptile-apps[bot]")] | map({body, created_at})',
-  ])
+  const comments = ghJsonPaginated([
+    'api', `repos/${repo}/issues/${prNumber}/comments`,
+  ]).filter((comment) => comment.user?.login === 'greptile-apps[bot]')
   for (let i = comments.length - 1; i >= 0; i--) {
     const m = comments[i].body.match(/confidence\s*score[:\s]*([0-5])\s*\/\s*5/i)
     if (m) return Number(m[1])
@@ -122,11 +126,10 @@ function latestConfidence(repo, prNumber) {
 const CODEX_LOGINS = ['chatgpt-codex-connector[bot]', 'chatgpt-codex-connector']
 
 function hasCodexReview(repo, prNumber) {
-  const reviews = ghJson([
-    'api', `repos/${repo}/pulls/${prNumber}/reviews`, '--paginate',
-    '--jq', '[.[] | .user.login]',
+  const reviews = ghJsonPaginated([
+    'api', `repos/${repo}/pulls/${prNumber}/reviews`,
   ])
-  if (reviews.some((l) => CODEX_LOGINS.includes(l))) return true
+  if (reviews.some((review) => CODEX_LOGINS.includes(review.user?.login))) return true
   // Codex 无 major issue 时可能只发 issue comment（「Codex Review: Didn't find any
   // major issues」形态，不产生正式 review——2026-08-06 .github#15 实踩：干净 PR 因此
   // 永远过不了本门禁）。评论形态只认两个条件同时成立：
@@ -142,10 +145,9 @@ function hasCodexReview(repo, prNumber) {
     pullRequest(number: ${prNumber}) { headRefOid } } }`
   const headOid = ghJson(['api', 'graphql', '-f', `query=${headQ}`])
     .data.repository.pullRequest.headRefOid.toLowerCase()
-  const comments = ghJson([
-    'api', `repos/${repo}/issues/${prNumber}/comments`, '--paginate',
-    '--jq', '[.[] | {login: .user.login, body: .body}]',
-  ])
+  const comments = ghJsonPaginated([
+    'api', `repos/${repo}/issues/${prNumber}/comments`,
+  ]).map((comment) => ({ login: comment.user?.login, body: comment.body }))
   return comments.some((c) => {
     if (!CODEX_LOGINS.includes(c.login)) return false
     const body = c.body || ''
@@ -164,10 +166,9 @@ function unresolvedThreads(repo, prNumber) {
 }
 
 function checkConclusions(repo, sha) {
-  const runs = ghJson([
-    'api', `repos/${repo}/commits/${sha}/check-runs`, '--paginate',
-    '--jq', '[.check_runs[] | {name, status, conclusion}]',
-  ])
+  const runs = ghJsonPaginated([
+    'api', `repos/${repo}/commits/${sha}/check-runs`,
+  ]).flatMap((page) => page.check_runs || [])
   // 同名 check 取最新（API 返回按时间倒序，first-wins）
   const byName = {}
   for (const r of runs) if (!(r.name in byName)) byName[r.name] = r

@@ -188,7 +188,7 @@ test('撤销旧 approval 不覆盖同一 reviewer 后来仍有效的新 approval
   }).satisfied, true)
 })
 
-test('dismissed 的 CHANGES_REQUESTED 不让更早 approval 复活', () => {
+test('dismissed 的 CHANGES_REQUESTED 不再阻塞仍有效的当前 head approval', () => {
   assert.equal(evaluateHumanReviewGate({
     hasLabel: true,
     authorLogin: 'author',
@@ -206,10 +206,10 @@ test('dismissed 的 CHANGES_REQUESTED 不让更早 approval 复活', () => {
         dismissed_previous_state: 'CHANGES_REQUESTED',
       },
     ],
-  }).satisfied, false)
+  }).satisfied, true)
 })
 
-test('CHANGES_REQUESTED 撤销时间覆盖撤销前的确认评论', () => {
+test('撤销旧 CHANGES_REQUESTED 不会覆盖独立确认评论', () => {
   assert.equal(evaluateHumanReviewGate({
     hasLabel: true,
     authorLogin: 'author',
@@ -225,10 +225,10 @@ test('CHANGES_REQUESTED 撤销时间覆盖撤销前的确认评论', () => {
       submitted_at: '2026-08-14T00:01:00Z', dismissed_at: '2026-08-14T00:03:00Z',
       dismissed_previous_state: 'CHANGES_REQUESTED',
     }],
-  }).satisfied, false)
+  }).satisfied, true)
 })
 
-test('dismissed 使用真实撤销时间覆盖撤销前的确认评论', () => {
+test('dismissed review 不会按撤销时间制造新的否决', () => {
   assert.equal(evaluateHumanReviewGate({
     hasLabel: true,
     authorLogin: 'author',
@@ -244,10 +244,10 @@ test('dismissed 使用真实撤销时间覆盖撤销前的确认评论', () => {
       submitted_at: '2026-08-14T00:01:00Z',
       dismissed_at: '2026-08-14T00:03:00Z',
     }],
-  }).satisfied, false)
+  }).satisfied, true)
 })
 
-test('已有撤销事件时即使 REST 状态仍是 APPROVED 也按撤销处理', () => {
+test('正式 approval 被撤销后仍可接受独立自然语言确认', () => {
   assert.equal(evaluateHumanReviewGate({
     hasLabel: true,
     authorLogin: 'author',
@@ -263,7 +263,28 @@ test('已有撤销事件时即使 REST 状态仍是 APPROVED 也按撤销处理'
       submitted_at: '2026-08-14T00:01:00Z',
       dismissed_at: '2026-08-14T00:03:00Z',
     }],
-  }).satisfied, false)
+  }).satisfied, true)
+})
+
+test('撤销旧否决不会覆盖同一 reviewer 后来的当前 head 批准', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'abc1234',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    reviews: [
+      {
+        id: 101, login: 'reviewer', permission: 'write', state: 'DISMISSED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:01:00Z', dismissed_at: '2026-08-14T00:03:00Z',
+        dismissed_previous_state: 'CHANGES_REQUESTED',
+      },
+      {
+        id: 102, login: 'reviewer', permission: 'write', state: 'APPROVED', commit_id: 'abc1234',
+        submitted_at: '2026-08-14T00:02:00Z',
+      },
+    ],
+  }).satisfied, true)
 })
 
 test('另一位有权限 reviewer 的最新批准仍可满足门禁', () => {

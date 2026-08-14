@@ -32,7 +32,6 @@ import {
   classifyMergeOutcome,
   matchesExpectedHead,
   shouldRequireUpToDate,
-  shouldUseAdmin,
 } from './merge-execution-policy.mjs'
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 
@@ -376,15 +375,13 @@ for (const repo of REPOS) {
       if (!liveCandidate.satisfied) {
         throw new Error(`合并前门禁已变化：${liveCandidate.reason}`)
       }
-      const liveRequiredGate = liveCandidate.requiredGate
-      // strict required checks 必须由 GitHub 在 merge 时原子校验，不能在客户端
-      // 检查 base 后再用 --admin 绕过；当前五仓 pull_request rules 均为 0 approvals。
+      // 不使用 --admin：GitHub 在实际 merge 时原子执行当前 rules/checks/queue；
+      // 当前五仓 pull_request rules 均为 0 approvals，无需 owner bypass。
       const mergeArgs = buildMergeArgs({
         repo,
         number: pr.number,
         method,
         headOid: pr.headRefOid,
-        admin: shouldUseAdmin(liveRequiredGate),
       })
       gh(mergeArgs)
       let mergedPr = readMergeOutcome(repo, pr.number)

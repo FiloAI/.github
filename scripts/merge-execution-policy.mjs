@@ -1,10 +1,8 @@
-export function buildMergeArgs({ repo, number, method, headOid, admin = false }) {
-  const args = [
+export function buildMergeArgs({ repo, number, method, headOid }) {
+  return [
     'pr', 'merge', String(number), '--repo', repo, method,
     '--match-head-commit', headOid,
   ]
-  if (admin) args.push('--admin')
-  return args
 }
 
 export function classifyMergeOutcome(pr) {
@@ -12,10 +10,6 @@ export function classifyMergeOutcome(pr) {
   if (pr.isInMergeQueue || pr.mergeQueueEntry) return 'queued'
   if (pr.autoMergeRequest) return 'scheduled'
   return 'pending'
-}
-
-export function shouldUseAdmin({ strict = false, mergeQueue = false }) {
-  return !strict && !mergeQueue
 }
 
 export function shouldRequireUpToDate({ strict = false, mergeQueue = false }) {

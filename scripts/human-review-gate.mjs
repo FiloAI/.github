@@ -1,5 +1,5 @@
 const REVIEW_PERMISSIONS = new Set(['admin', 'maintain', 'write'])
-const DECISIVE_REVIEW_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'])
+const DECISIVE_REVIEW_STATES = new Set(['APPROVED', 'CHANGES_REQUESTED'])
 
 const EXACT_APPROVALS = new Set([
   '同意',
@@ -83,35 +83,32 @@ export function evaluateHumanReviewGate({
   for (let index = 0; index < reviews.length; index++) {
     const review = reviews[index]
     if (!hasReviewPermission(review.permission)) continue
-    const dismissedPreviousState = String(review.dismissed_previous_state || '').toUpperCase()
-    const state = review.dismissed_at
-      ? (dismissedPreviousState === 'CHANGES_REQUESTED' ? 'CHANGES_REQUESTED' : 'DISMISSED')
-      : String(review.state || '').toUpperCase()
+    // A dismissal cancels the targeted review; it is not a new negative review at
+    // the dismissal timestamp. Treating it as one can let an old dismissed change
+    // request incorrectly override a later approval from the same reviewer.
+    if (dismissedReviewIds.has(review.id)) continue
+    const state = String(review.state || '').toUpperCase()
     if (!DECISIVE_REVIEW_STATES.has(state)) continue
     const login = String(review.login || '').toLowerCase()
     if (!login) continue
-    const submittedAt = Date.parse(review.dismissed_at || review.submitted_at) || 0
-    const effectiveReview = state === String(review.state || '').toUpperCase()
-      ? review
-      : { ...review, state }
+    const submittedAt = Date.parse(review.submitted_at) || 0
     if (state === 'APPROVED'
-      && !dismissedReviewIds.has(review.id)
       && String(review.commit_id || '').toLowerCase() === String(headOid || '').toLowerCase()) {
       const previous = latestApprovalByLogin.get(login)
       if (!previous || submittedAt > previous.submittedAt || (submittedAt === previous.submittedAt && index > previous.index)) {
-        latestApprovalByLogin.set(login, { review: effectiveReview, submittedAt, index })
+        latestApprovalByLogin.set(login, { review, submittedAt, index })
       }
     }
     if (state === 'CHANGES_REQUESTED') {
       const previous = latestChangeRequestByLogin.get(login)
       if (!previous || submittedAt > previous.submittedAt || (submittedAt === previous.submittedAt && index > previous.index)) {
-        latestChangeRequestByLogin.set(login, { review: effectiveReview, submittedAt, index })
+        latestChangeRequestByLogin.set(login, { review, submittedAt, index })
       }
     }
-    if (['CHANGES_REQUESTED', 'DISMISSED'].includes(state)) {
+    if (state === 'CHANGES_REQUESTED') {
       const negative = latestNegativeByLogin.get(login)
       if (!negative || submittedAt > negative.submittedAt || (submittedAt === negative.submittedAt && index > negative.index)) {
-        latestNegativeByLogin.set(login, { review: effectiveReview, submittedAt, index })
+        latestNegativeByLogin.set(login, { review, submittedAt, index })
       }
     }
   }

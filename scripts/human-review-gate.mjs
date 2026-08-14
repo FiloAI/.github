@@ -75,22 +75,28 @@ export function evaluateHumanReviewGate({
   for (let index = 0; index < reviews.length; index++) {
     const review = reviews[index]
     if (!hasReviewPermission(review.permission)) continue
-    if (!DECISIVE_REVIEW_STATES.has(String(review.state || '').toUpperCase())) continue
+    const state = review.dismissed_at
+      ? 'DISMISSED'
+      : String(review.state || '').toUpperCase()
+    if (!DECISIVE_REVIEW_STATES.has(state)) continue
     const login = String(review.login || '').toLowerCase()
     if (!login) continue
     const submittedAt = Date.parse(
-      String(review.state || '').toUpperCase() === 'DISMISSED'
+      state === 'DISMISSED'
         ? review.dismissed_at || review.submitted_at
         : review.submitted_at,
     ) || 0
+    const effectiveReview = state === String(review.state || '').toUpperCase()
+      ? review
+      : { ...review, state }
     const previous = latestReviewByLogin.get(login)
     if (!previous || submittedAt > previous.submittedAt || (submittedAt === previous.submittedAt && index > previous.index)) {
-      latestReviewByLogin.set(login, { review, submittedAt, index })
+      latestReviewByLogin.set(login, { review: effectiveReview, submittedAt, index })
     }
-    if (['CHANGES_REQUESTED', 'DISMISSED'].includes(String(review.state || '').toUpperCase())) {
+    if (['CHANGES_REQUESTED', 'DISMISSED'].includes(state)) {
       const negative = latestNegativeByLogin.get(login)
       if (!negative || submittedAt > negative.submittedAt || (submittedAt === negative.submittedAt && index > negative.index)) {
-        latestNegativeByLogin.set(login, { review, submittedAt, index })
+        latestNegativeByLogin.set(login, { review: effectiveReview, submittedAt, index })
       }
     }
   }

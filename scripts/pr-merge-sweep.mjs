@@ -310,13 +310,19 @@ for (const repo of REPOS) {
     continue
   }
   for (const listedPr of prs) {
-    const pr = refreshMergeability(repo, listedPr)
-    if (ONLY_PR !== null && pr.number !== ONLY_PR) continue
-    const tag = `[${repo}#${pr.number}]`
+    let pr = listedPr
+    const tag = `[${repo}#${listedPr.number}]`
     const skip = (why) => {
       totalSkipped++
-      console.log(`${tag} SKIP: ${why} — ${pr.title}`)
+      console.log(`${tag} SKIP: ${why} — ${pr.title || listedPr.title}`)
     }
+    try {
+      pr = refreshMergeability(repo, listedPr)
+    } catch (error) {
+      skip(`mergeable 实时回读失败：${String(error.message).slice(0, 160)}`)
+      continue
+    }
+    if (ONLY_PR !== null && pr.number !== ONLY_PR) continue
     const candidate = evaluateCandidate(repo, pr)
     if (!candidate.satisfied) { skip(candidate.reason); continue }
     const { requiredGate, isBot } = candidate

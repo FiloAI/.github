@@ -163,6 +163,25 @@ test('dismissed 使用真实撤销时间覆盖撤销前的确认评论', () => {
   }).satisfied, false)
 })
 
+test('已有撤销事件时即使 REST 状态仍是 APPROVED 也按撤销处理', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'abc1234',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    comments: [{
+      login: 'reviewer', permission: 'write', body: '确认',
+      created_at: '2026-08-14T00:02:00Z',
+    }],
+    reviews: [{
+      login: 'reviewer', permission: 'write', state: 'APPROVED', commit_id: 'abc1234',
+      submitted_at: '2026-08-14T00:01:00Z',
+      dismissed_at: '2026-08-14T00:03:00Z',
+    }],
+  }).satisfied, false)
+})
+
 test('另一位有权限 reviewer 的最新批准仍可满足门禁', () => {
   assert.equal(evaluateHumanReviewGate({
     hasLabel: true,

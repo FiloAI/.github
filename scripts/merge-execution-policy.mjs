@@ -6,3 +6,9 @@ export function buildMergeArgs({ repo, number, method, headOid, admin = false })
   if (admin) args.push('--admin')
   return args
 }
+
+export function classifyMergeOutcome(pr) {
+  if (pr.state === 'MERGED' && pr.mergedAt) return 'merged'
+  if (pr.isInMergeQueue || pr.mergeQueueEntry) return 'queued'
+  return 'pending'
+}

@@ -27,7 +27,7 @@ import { execFileSync } from 'node:child_process'
 import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
-import { buildMergeArgs } from './merge-execution-policy.mjs'
+import { buildMergeArgs, classifyMergeOutcome } from './merge-execution-policy.mjs'
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
@@ -248,6 +248,16 @@ function refreshMergeability(repo, pr) {
   return { ...pr, ...live }
 }
 
+function readMergeOutcome(repo, prNumber) {
+  const [owner, name] = repo.split('/')
+  const query = `query { repository(owner: "${owner}", name: "${name}") {
+    pullRequest(number: ${prNumber}) {
+      state mergedAt mergeCommit { oid } isInMergeQueue mergeQueueEntry { id }
+    } } }`
+  return ghJson(['api', 'graphql', '-f', `query=${query}`])
+    .data.repository.pullRequest
+}
+
 function evaluateCandidate(repo, pr) {
   if (pr.isDraft) return { satisfied: false, reason: 'draft' }
   if (!REPO_BASES[repo].includes(pr.baseRefName)) {
@@ -276,6 +286,7 @@ function evaluateCandidate(repo, pr) {
 }
 
 let totalMerged = 0
+let totalQueued = 0
 let totalSkipped = 0
 
 for (const repo of REPOS) {
@@ -319,12 +330,20 @@ for (const repo of REPOS) {
         admin: !requiredGate.strict,
       })
       gh(mergeArgs)
-      const mergedPr = ghJson([
-        'pr', 'view', String(pr.number), '--repo', repo, '--json',
-        'state,mergedAt,mergeCommit',
-      ])
-      if (mergedPr.state !== 'MERGED' || !mergedPr.mergedAt) {
-        throw new Error(`合并命令返回但 live state=${mergedPr.state}`)
+      let mergedPr = readMergeOutcome(repo, pr.number)
+      let outcome = classifyMergeOutcome(mergedPr)
+      for (let retry = 0; outcome === 'pending' && retry < 2; retry++) {
+        execFileSync('sleep', ['2'])
+        mergedPr = readMergeOutcome(repo, pr.number)
+        outcome = classifyMergeOutcome(mergedPr)
+      }
+      if (outcome === 'queued') {
+        console.log(`${tag} QUEUED (${method}) — ${pr.title}`)
+        totalQueued++
+        continue
+      }
+      if (outcome !== 'merged') {
+        throw new Error(`合并命令返回但 live state=${mergedPr.state} queue=${Boolean(mergedPr.isInMergeQueue)}`)
       }
       console.log(`${tag} MERGED (${method}) commit=${mergedPr.mergeCommit?.oid || 'unknown'} — ${pr.title}`)
       totalMerged++
@@ -335,4 +354,4 @@ for (const repo of REPOS) {
   if (prs.length === 0) console.log(`[${repo}] 无 open PR`)
 }
 
-console.log(`\nsweep 完成：merged=${DRY_RUN ? '(dry-run)' : totalMerged} skipped=${totalSkipped}`)
+console.log(`\nsweep 完成：merged=${DRY_RUN ? '(dry-run)' : totalMerged} queued=${totalQueued} skipped=${totalSkipped}`)

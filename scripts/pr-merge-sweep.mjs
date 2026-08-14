@@ -198,11 +198,15 @@ function requiredChecksGate(repo, pr) {
   const config = requiredRuleConfig(repo, pr.baseRefName)
   const checks = checkConclusions(repo, pr.headRefOid)
   const checkGate = evaluateRequiredChecks({ requirements: config.requirements, checks })
-  if (!checkGate.satisfied || !config.strict) return checkGate
+  if (!checkGate.satisfied) return { ...checkGate, strict: config.strict }
+  if (!config.strict) return { ...checkGate, strict: false }
   const comparison = ghJson([
     'api', `repos/${repo}/compare/${encodeURIComponent(pr.baseRefName)}...${pr.headRefOid}`,
   ])
-  return evaluateStrictPolicy({ strict: true, behindBy: comparison.behind_by })
+  return {
+    ...evaluateStrictPolicy({ strict: true, behindBy: comparison.behind_by }),
+    strict: true,
+  }
 }
 
 function refreshMergeability(repo, pr) {
@@ -263,12 +267,12 @@ for (const repo of REPOS) {
       continue
     }
     try {
-      // --admin：显式行使 owner bypass。2026-08-05 上 Merge discipline ruleset
-      // （update 限制 + approvals≥1）后，普通合并调用即使是 bypass 名单成员也会被
-      // base branch policy 拒绝（21:07/22:07 两轮实踩）；admin 合并才走 bypass 通道。
-      // 门禁不受影响——本脚本只会走到这里当且仅当全部硬门禁 + AI 终审已通过。
-      gh(['pr', 'merge', String(pr.number), '--repo', repo, method, '--admin',
-        '--match-head-commit', pr.headRefOid])
+      // strict required checks 必须由 GitHub 在 merge 时原子校验，不能用 --admin 绕过；
+      // 非 strict 仓库才使用 owner bypass，并继续用 expected head 锁防止审后换 head。
+      const mergeArgs = ['pr', 'merge', String(pr.number), '--repo', repo, method,
+        '--match-head-commit', pr.headRefOid]
+      if (!requiredGate.strict) mergeArgs.push('--admin')
+      gh(mergeArgs)
       const mergedPr = ghJson([
         'pr', 'view', String(pr.number), '--repo', repo, '--json',
         'state,mergedAt,mergeCommit',

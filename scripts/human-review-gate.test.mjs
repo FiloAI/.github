@@ -254,3 +254,27 @@ test('否决后的新确认评论仍可满足门禁', () => {
     }],
   }).satisfied, true)
 })
+
+test('其它 commit 的后续批准不能抹掉当前 head 对早期评论的否决', () => {
+  assert.equal(evaluateHumanReviewGate({
+    hasLabel: true,
+    authorLogin: 'author',
+    authorPermission: 'read',
+    headOid: 'commit-a',
+    headCommittedAt: Date.parse('2026-08-14T00:00:00Z'),
+    comments: [{
+      login: 'reviewer', permission: 'write', body: 'LGTM',
+      created_at: '2026-08-14T00:01:00Z',
+    }],
+    reviews: [
+      {
+        login: 'reviewer', permission: 'write', state: 'CHANGES_REQUESTED', commit_id: 'commit-a',
+        submitted_at: '2026-08-14T00:02:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write', state: 'APPROVED', commit_id: 'commit-b',
+        submitted_at: '2026-08-14T00:03:00Z',
+      },
+    ],
+  }).satisfied, false)
+})

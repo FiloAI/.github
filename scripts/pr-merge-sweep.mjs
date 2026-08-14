@@ -80,6 +80,31 @@ function collaboratorPermission(repo, login) {
   }
 }
 
+function reviewDismissalTimes(repo, prNumber) {
+  const [owner, name] = repo.split('/')
+  const dismissedAtByReviewId = new Map()
+  let cursor = null
+  let hasNextPage = true
+  while (hasNextPage) {
+    const after = cursor ? `, after: ${JSON.stringify(cursor)}` : ''
+    const query = `query { repository(owner: "${owner}", name: "${name}") {
+      pullRequest(number: ${prNumber}) { timelineItems(first: 100${after}, itemTypes: [REVIEW_DISMISSED_EVENT]) {
+        nodes { ... on ReviewDismissedEvent { createdAt review { databaseId } } }
+        pageInfo { hasNextPage endCursor }
+      } } } }`
+    const timeline = ghJson(['api', 'graphql', '-f', `query=${query}`])
+      .data.repository.pullRequest.timelineItems
+    for (const event of timeline.nodes) {
+      if (event.review?.databaseId) {
+        dismissedAtByReviewId.set(event.review.databaseId, event.createdAt)
+      }
+    }
+    hasNextPage = timeline.pageInfo.hasNextPage
+    cursor = timeline.pageInfo.endCursor
+  }
+  return dismissedAtByReviewId
+}
+
 function humanReviewGate(repo, pr) {
   const hasLabel = pr.labels.some((label) => label.name === 'needs-human-review')
   if (!hasLabel) return { satisfied: true, reason: null }
@@ -101,17 +126,7 @@ function humanReviewGate(repo, pr) {
   const reviews = ghJsonPaginated([
     'api', `repos/${repo}/pulls/${pr.number}/reviews`,
   ])
-  const [owner, name] = repo.split('/')
-  const dismissalQuery = `query { repository(owner: "${owner}", name: "${name}") {
-    pullRequest(number: ${pr.number}) { timelineItems(first: 100, itemTypes: [REVIEW_DISMISSED_EVENT]) {
-      nodes { ... on ReviewDismissedEvent { createdAt review { databaseId } } }
-    } } } }`
-  const dismissalData = ghJson(['api', 'graphql', '-f', `query=${dismissalQuery}`])
-  const dismissedAtByReviewId = new Map(
-    dismissalData.data.repository.pullRequest.timelineItems.nodes
-      .filter((event) => event.review?.databaseId)
-      .map((event) => [event.review.databaseId, event.createdAt]),
-  )
+  const dismissedAtByReviewId = reviewDismissalTimes(repo, pr.number)
   const normalizedReviews = reviews.map((review) => ({
     id: review.id,
     login: review.user?.login || '',

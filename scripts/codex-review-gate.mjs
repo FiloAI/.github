@@ -54,7 +54,7 @@ export function hasCurrentHeadCodexReview({ reviews = [], comments = [], headOid
     if (!CODEX_LOGINS.has(login)) return false
     const body = String(comment.body || '')
     const match = body.match(
-      /^\s*Codex Review: Didn't find any major issues\. :[a-z0-9_+\-]+:\s+\*\*Reviewed commit:\*\*\s*`([0-9a-f]{7,40})`\s*([\s\S]*)$/i,
+      /^\s*Codex Review: Didn't find any major issues\.(?:\s+Already looking forward to the next diff\.|\s+:[a-z0-9_+\-]+:)\s+\*\*Reviewed commit:\*\*\s*`([0-9a-f]{7,40})`\s*([\s\S]*)$/i,
     )
     return Boolean(match
       && head.startsWith(match[1].toLowerCase())

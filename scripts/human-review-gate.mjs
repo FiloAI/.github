@@ -78,7 +78,11 @@ export function evaluateHumanReviewGate({
     if (!DECISIVE_REVIEW_STATES.has(String(review.state || '').toUpperCase())) continue
     const login = String(review.login || '').toLowerCase()
     if (!login) continue
-    const submittedAt = Date.parse(review.submitted_at) || 0
+    const submittedAt = Date.parse(
+      String(review.state || '').toUpperCase() === 'DISMISSED'
+        ? review.dismissed_at || review.submitted_at
+        : review.submitted_at,
+    ) || 0
     const previous = latestReviewByLogin.get(login)
     if (!previous || submittedAt > previous.submittedAt || (submittedAt === previous.submittedAt && index > previous.index)) {
       latestReviewByLogin.set(login, { review, submittedAt, index })

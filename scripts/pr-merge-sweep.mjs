@@ -27,7 +27,7 @@ import { execFileSync } from 'node:child_process'
 import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
-import { buildMergeArgs, validateAdminFallbackSnapshot } from './merge-execution-policy.mjs'
+import { buildMergeArgs } from './merge-execution-policy.mjs'
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
@@ -100,12 +100,26 @@ function humanReviewGate(repo, pr) {
   }))
   const reviews = ghJsonPaginated([
     'api', `repos/${repo}/pulls/${pr.number}/reviews`,
-  ]).map((review) => ({
+  ])
+  const [owner, name] = repo.split('/')
+  const dismissalQuery = `query { repository(owner: "${owner}", name: "${name}") {
+    pullRequest(number: ${pr.number}) { timelineItems(first: 100, itemTypes: [REVIEW_DISMISSED_EVENT]) {
+      nodes { ... on ReviewDismissedEvent { createdAt review { databaseId } } }
+    } } } }`
+  const dismissalData = ghJson(['api', 'graphql', '-f', `query=${dismissalQuery}`])
+  const dismissedAtByReviewId = new Map(
+    dismissalData.data.repository.pullRequest.timelineItems.nodes
+      .filter((event) => event.review?.databaseId)
+      .map((event) => [event.review.databaseId, event.createdAt]),
+  )
+  const normalizedReviews = reviews.map((review) => ({
+    id: review.id,
     login: review.user?.login || '',
     permission: collaboratorPermission(repo, review.user?.login || ''),
     state: review.state || '',
     commit_id: review.commit_id || '',
     submitted_at: review.submitted_at,
+    dismissed_at: dismissedAtByReviewId.get(review.id) || null,
   }))
   return evaluateHumanReviewGate({
     hasLabel,
@@ -113,7 +127,7 @@ function humanReviewGate(repo, pr) {
     authorPermission,
     headOid: pr.headRefOid,
     headCommittedAt,
-    reviews,
+    reviews: normalizedReviews,
     comments,
   })
 }
@@ -214,16 +228,9 @@ function refreshMergeability(repo, pr) {
   if (pr.mergeable !== 'UNKNOWN') return pr
   const live = ghJson([
     'pr', 'view', String(pr.number), '--repo', repo, '--json',
-    'number,title,isDraft,baseRefName,baseRefOid,labels,author,mergeable,headRefOid,state',
+    'number,title,isDraft,baseRefName,labels,author,mergeable,headRefOid,state',
   ])
   return { ...pr, ...live }
-}
-
-function livePr(repo, number) {
-  return ghJson([
-    'pr', 'view', String(number), '--repo', repo, '--json',
-    'number,title,isDraft,baseRefName,baseRefOid,labels,author,mergeable,headRefOid,state',
-  ])
 }
 
 function evaluateCandidate(repo, pr) {
@@ -262,7 +269,7 @@ for (const repo of REPOS) {
   try {
     prs = ghJson([
       'pr', 'list', '--repo', repo, '--state', 'open', '--limit', '100', '--json',
-      'number,title,isDraft,baseRefName,baseRefOid,labels,author,mergeable,headRefOid,state',
+      'number,title,isDraft,baseRefName,labels,author,mergeable,headRefOid,state',
     ])
   } catch (e) {
     console.log(`[${repo}] 列表拉取失败：${e.message}`)
@@ -287,57 +294,20 @@ for (const repo of REPOS) {
       continue
     }
     try {
-      // strict 仓库先让 GitHub 原子执行 freshness；若其它仓库规则（例如形式化
-      // approve）拒绝，则完整重读全部硬门禁，并在 head/base 均未变化时用 owner
-      // bypass 重试。这样不会把已删除的人工批准门禁重新引入自动化。
-      const primaryArgs = buildMergeArgs({
+      // strict required checks 必须由 GitHub 在 merge 时原子校验，不能在客户端
+      // 检查 base 后再用 --admin 绕过；当前五仓 pull_request rules 均为 0 approvals。
+      const mergeArgs = buildMergeArgs({
         repo,
         number: pr.number,
         method,
         headOid: pr.headRefOid,
         admin: !requiredGate.strict,
       })
-      let primaryError = null
-      try {
-        gh(primaryArgs)
-      } catch (error) {
-        primaryError = error
-      }
-      let mergedPr = ghJson([
+      gh(mergeArgs)
+      const mergedPr = ghJson([
         'pr', 'view', String(pr.number), '--repo', repo, '--json',
         'state,mergedAt,mergeCommit',
       ])
-      if (mergedPr.state !== 'MERGED' && primaryError && requiredGate.strict) {
-        const retryPr = refreshMergeability(repo, livePr(repo, pr.number))
-        const retryCandidate = evaluateCandidate(repo, retryPr)
-        if (!retryCandidate.satisfied) {
-          throw new Error(`strict merge 失败且重检未通过：${retryCandidate.reason}`)
-        }
-        const checkedBaseOid = retryPr.baseRefOid
-        const snapshot = livePr(repo, pr.number)
-        const snapshotGate = validateAdminFallbackSnapshot({
-          expectedHeadOid: pr.headRefOid,
-          checkedBaseOid,
-          snapshot,
-        })
-        if (!snapshotGate.satisfied) {
-          throw new Error(`strict merge 失败且 ${snapshotGate.reason}`)
-        }
-        console.log(`${tag} strict 原子 merge 被其它规则拒绝；硬门禁重检通过，使用 owner bypass`)
-        gh(buildMergeArgs({
-          repo,
-          number: pr.number,
-          method,
-          headOid: pr.headRefOid,
-          admin: true,
-        }))
-        mergedPr = ghJson([
-          'pr', 'view', String(pr.number), '--repo', repo, '--json',
-          'state,mergedAt,mergeCommit',
-        ])
-      } else if (mergedPr.state !== 'MERGED' && primaryError) {
-        throw primaryError
-      }
       if (mergedPr.state !== 'MERGED' || !mergedPr.mergedAt) {
         throw new Error(`合并命令返回但 live state=${mergedPr.state}`)
       }

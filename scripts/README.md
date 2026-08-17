@@ -6,7 +6,6 @@
 
 ```bash
 node scripts/pr-merge-sweep.mjs --dry-run   # 只看决策不合并
-node scripts/pr-merge-sweep.mjs             # 实际合并（以执行者的 gh 登录态）
 node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend   # 只扫一个仓
 node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 --expected-head <40位本机AI已审SHA> # 定点合并
 ```
@@ -17,7 +16,7 @@ node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 --expect
 
 列表接口暂时返回 `mergeable=UNKNOWN` 时会立即回读该 PR 的实时状态，不会把旧 PR 永久跳过；满足门禁的 PR 也不再受每仓固定合并配额限制。
 
-脚本不会请求或等待 GitHub Codex Review，不会发布任何配额召唤评论，也不会自动 approve、写“终审意见”或创建“团队待办”；候选由运行定时任务的 Codex 读取当前 head 完整 diff 后自行审核。定点实合并必须用 `--expected-head` 传入本轮 Codex 已审的完整 SHA，并继续用 `--match-head-commit` 绑定该 head；合并前会重读 PR 元数据与全部硬门禁，合并后回读 merged / queued / scheduled 实时状态。
+脚本不会请求或等待 GitHub Codex Review，不会发布任何配额召唤评论，也不会自动 approve、写“终审意见”或创建“团队待办”；候选由运行定时任务的 Codex 读取当前 head 完整 diff 后自行审核。裸跑和未知参数绝不执行全量实合并；`--help` 只显示帮助。定点实合并必须用 `--expected-head` 传入本轮 Codex 已审的完整 SHA，并继续用 `--match-head-commit` 绑定该 head；合并前会重读 PR 元数据与全部硬门禁，合并后回读 merged / queued / scheduled 实时状态。
 
 活体任务由 Cindy scheduler 管理；前置检查脚本必须通过 `schedule_set_pre_run_hook` 安装和自测，不直接写入 ignored 的 `scripts/schedule-checks/`。仓库里的本文件只记录脚本契约，不作为另一套流程规范。
 

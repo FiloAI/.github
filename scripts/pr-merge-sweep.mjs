@@ -12,7 +12,7 @@
 // 2026-08-05 起的混合模式分工：定时任务先跑 --dry-run 拿到过全部硬门禁的候选，
 // 由本机 AI 终审 agent 逐个读 diff 判「是什么/有无危害/与描述相符」，判过的才用
 // --repo X --pr N 定点合并（本脚本是唯一合并执行通道，合并方式仍由脚本判定）。
-// 裸跑（无 --pr）仍是全量模式，仅供人工兜底，常规链路不再直接用。
+// 全量实合并永久禁用；只有 --dry-run 可全量列候选，实合并必须定点并绑定 expected head。
 //
 // 每个候选 PR 的门禁（全部满足才合并）：
 //   1. 非 draft、base 在允许列表、无 no-automerge、mergeable=MERGEABLE
@@ -35,12 +35,18 @@ import {
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
+const HELP = process.argv.includes('--help') || process.argv.includes('-h')
 const repoArgIdx = process.argv.indexOf('--repo')
 const ONLY_REPO = repoArgIdx > -1 ? process.argv[repoArgIdx + 1] : null
 const prArgIdx = process.argv.indexOf('--pr')
 const ONLY_PR = prArgIdx > -1 ? Number(process.argv[prArgIdx + 1]) : null
 const expectedHeadIdx = process.argv.indexOf('--expected-head')
 const EXPECTED_HEAD = expectedHeadIdx > -1 ? process.argv[expectedHeadIdx + 1] : null
+if (HELP) {
+  console.log('用法: node scripts/pr-merge-sweep.mjs --dry-run [--repo owner/name]')
+  console.log('      node scripts/pr-merge-sweep.mjs --repo owner/name --pr <number> --expected-head <40位SHA>')
+  process.exit(0)
+}
 if (ONLY_PR !== null && (!Number.isInteger(ONLY_PR) || !ONLY_REPO)) {
   console.error('--pr 需要一个整数且必须与 --repo 同用')
   process.exit(1)
@@ -51,6 +57,10 @@ if (EXPECTED_HEAD && (!ONLY_PR || !/^[0-9a-f]{40}$/i.test(EXPECTED_HEAD))) {
 }
 if (!DRY_RUN && ONLY_PR !== null && !EXPECTED_HEAD) {
   console.error('定点实合并必须传 --expected-head <本机 AI 已审过的 40 位 SHA>')
+  process.exit(1)
+}
+if (!DRY_RUN && ONLY_PR === null) {
+  console.error('全量实合并已禁用；请先 --dry-run，再使用 --repo/--pr/--expected-head 定点合并')
   process.exit(1)
 }
 

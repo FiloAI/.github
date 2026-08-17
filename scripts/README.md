@@ -12,7 +12,7 @@ node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 --expect
 
 门禁（全过才进入本轮自审候选）：非 draft + base 在仓库允许列表 + 无 `no-automerge` + `mergeable=MERGEABLE` + 当前 base ruleset 声明的全部 required checks 绿 + 0 未解决 review thread。没有 required checks 的仓库不虚构 `summary`；若 PR 带 `needs-human-review`，作者有 write 及以上权限时自动满足，否则接受当前 head 的正式 approve，或有权限者在当前 head 后给出的明确自然语言确认。
 
-不属于门禁：GitHub Codex Review、Greptile/Confidence、PR 大小、commit 数、作者身份分级、feat/fix 类型、视觉或产品方向分类。它们可以作为信息，但不得让一个已满足上述硬门禁的 PR 等待外部 AI 或人工。
+不属于门禁：GitHub Codex Review、Greptile/Confidence、PR 大小、commit 数、作者身份分级、feat/fix 类型、视觉或产品方向分类。自动出现的 GitHub Codex Review 可以作为非约束性的辅助证据读取，但不得主动召唤、不得等待，也不得让一个已满足上述硬门禁的 PR 因其缺席、失败或意见而停下。
 
 列表接口暂时返回 `mergeable=UNKNOWN` 时会立即回读该 PR 的实时状态，不会把旧 PR 永久跳过；满足门禁的 PR 也不再受每仓固定合并配额限制。
 

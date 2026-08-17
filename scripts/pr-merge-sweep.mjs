@@ -20,7 +20,8 @@
 //   3. 0 个未解决 review thread
 //   4. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
 // Greptile、Confidence、改动规模、作者身份分级与产品/视觉分类均不是合并门禁。
-// GitHub Codex Review 也不是门禁；候选由运行本任务的 Codex 读取当前 head 完整 diff 自审。
+// GitHub Codex Review 也不是门禁；自动出现时只作非约束性辅助信息，不召唤、不等待。
+// 候选由运行本任务的 Codex 读取当前 head 完整 diff 自审。
 // 合并方式：bot 作者 squash，人类作者 merge commit（与 frontend 既有约定一致）。
 
 import { execFileSync } from 'node:child_process'

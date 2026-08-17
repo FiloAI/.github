@@ -17,14 +17,13 @@
 // 每个候选 PR 的门禁（全部满足才合并）：
 //   1. 非 draft、base 在允许列表、无 no-automerge、mergeable=MERGEABLE
 //   2. 当前 base ruleset 声明的全部 required status checks = success（没有则不虚构）
-//   3. 人类作者 PR 有绑定当前 head 的 Codex 结论
-//   4. 0 个未解决 review thread
-//   5. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
+//   3. 0 个未解决 review thread
+//   4. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
 // Greptile、Confidence、改动规模、作者身份分级与产品/视觉分类均不是合并门禁。
+// GitHub Codex Review 也不是门禁；候选由运行本任务的 Codex 读取当前 head 完整 diff 自审。
 // 合并方式：bot 作者 squash，人类作者 merge commit（与 frontend 既有约定一致）。
 
 import { execFileSync } from 'node:child_process'
-import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
 import {
@@ -169,20 +168,6 @@ function humanReviewGate(repo, pr) {
   })
 }
 
-function hasCodexReview(repo, prNumber, headOid) {
-  const reviews = ghJsonPaginated([
-    'api', `repos/${repo}/pulls/${prNumber}/reviews`,
-  ])
-  const comments = ghJsonPaginated([
-    'api', `repos/${repo}/issues/${prNumber}/comments`,
-  ])
-  return hasCurrentHeadCodexReview({
-    reviews,
-    comments,
-    headOid,
-  })
-}
-
 function unresolvedThreads(repo, prNumber) {
   const [owner, name] = repo.split('/')
   const q = `query { repository(owner: "${owner}", name: "${name}") {
@@ -302,9 +287,6 @@ function evaluateCandidate(repo, pr) {
   const requiredGate = requiredChecksGate(repo, pr)
   if (!requiredGate.satisfied) return { satisfied: false, reason: requiredGate.reason }
   const isBot = pr.author?.is_bot || /\[bot\]$/.test(pr.author?.login ?? '')
-  if (!isBot && !hasCodexReview(repo, pr.number, pr.headRefOid)) {
-    return { satisfied: false, reason: '当前 head 缺 Codex 结论' }
-  }
   const unresolved = unresolvedThreads(repo, pr.number)
   if (unresolved > 0) {
     return { satisfied: false, reason: `${unresolved} 个未解决 review thread` }

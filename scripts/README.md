@@ -10,7 +10,7 @@ node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend   # 只扫一个�
 node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 --expected-head <40位本机AI已审SHA> # 定点合并
 ```
 
-门禁（全过才进入本轮自审候选）：非 draft + base 在仓库允许列表 + 无 `no-automerge` + `mergeable=MERGEABLE` + 当前 base ruleset 声明的全部 required checks 绿 + 0 未解决 review thread。没有 required checks 的仓库不虚构 `summary`；若 PR 带 `needs-human-review`，作者有 write 及以上权限时自动满足，否则接受当前 head 的正式 approve，或有权限者在当前 head 后给出的明确自然语言确认。
+门禁（全过才进入本轮自审候选）：非 draft + base 在仓库允许列表 + 无 `no-automerge` + `mergeable=MERGEABLE` + 当前 base ruleset 声明的全部 required checks 绿 + 0 未解决 review thread + 无尚未解除的成员人工阻止。任何有 write 及以上权限的成员通过普通评论明确说“不能/不宜/不要合并”、指出“功能阻断/merge blocker”，或提交 `CHANGES_REQUESTED`，都立即 fail-closed；作者 push 新 head 不自动清除，必须由原阻止者对当前 head 明确放行或正式 `APPROVED`。没有 required checks 的仓库不虚构 `summary`；若 PR 带 `needs-human-review`，作者有 write 及以上权限时自动满足，否则接受当前 head 的正式 approve，或有权限者在当前 head 后给出的明确自然语言确认。
 
 不属于门禁：GitHub Codex Review、Greptile/Confidence、PR 大小、commit 数、作者身份分级、feat/fix 类型、视觉或产品方向分类。自动出现的 GitHub Codex Review 可以作为非约束性的辅助证据读取，但不得主动召唤、不得等待，也不得让一个已满足上述硬门禁的 PR 因其缺席、失败或意见而停下。
 

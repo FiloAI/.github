@@ -18,7 +18,8 @@
 //   1. 非 draft、base 在允许列表、无 no-automerge、mergeable=MERGEABLE
 //   2. 当前 base ruleset 声明的全部 required status checks = success（没有则不虚构）
 //   3. 0 个未解决 review thread
-//   4. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
+//   4. 无有权限成员尚未解除的明确阻止评论或 CHANGES_REQUESTED
+//   5. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
 // Greptile、Confidence、改动规模、作者身份分级与产品/视觉分类均不是合并门禁。
 // GitHub Codex Review 也不是门禁；自动出现时只作非约束性辅助信息，不召唤、不等待。
 // 候选由运行本任务的 Codex 读取当前 head 完整 diff 自审。
@@ -26,6 +27,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
+import { evaluateManualMergeBlockGate } from './manual-merge-block-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
 import {
   buildMergeArgs,
@@ -179,6 +181,43 @@ function humanReviewGate(repo, pr) {
   })
 }
 
+function manualMergeBlockGate(repo, pr) {
+  const headCommittedAt = Date.parse(gh([
+    'api', `repos/${repo}/commits/${pr.headRefOid}`, '--jq', '.commit.committer.date',
+  ]).trim()) || 0
+  const comments = ghJsonPaginated([
+    'api', `repos/${repo}/issues/${pr.number}/comments`,
+  ]).map((comment) => ({
+    login: comment.user?.login || '',
+    permission: collaboratorPermission(repo, comment.user?.login || ''),
+    body: comment.body || '',
+    created_at: comment.created_at,
+  }))
+  const reviews = ghJsonPaginated([
+    'api', `repos/${repo}/pulls/${pr.number}/reviews`,
+  ])
+  const dismissalByReviewId = reviewDismissalInfo(repo, pr.number)
+  const normalizedReviews = reviews.map((review) => {
+    const dismissal = dismissalByReviewId.get(review.id)
+    return {
+      id: review.id,
+      login: review.user?.login || '',
+      permission: collaboratorPermission(repo, review.user?.login || ''),
+      state: review.state || '',
+      commit_id: review.commit_id || '',
+      submitted_at: review.submitted_at,
+      dismissed_at: dismissal?.dismissedAt || null,
+      dismissed_previous_state: dismissal?.previousState || null,
+    }
+  })
+  return evaluateManualMergeBlockGate({
+    headOid: pr.headRefOid,
+    headCommittedAt,
+    comments,
+    reviews: normalizedReviews,
+  })
+}
+
 function unresolvedThreads(repo, prNumber) {
   const [owner, name] = repo.split('/')
   const q = `query { repository(owner: "${owner}", name: "${name}") {
@@ -302,6 +341,8 @@ function evaluateCandidate(repo, pr) {
   if (unresolved > 0) {
     return { satisfied: false, reason: `${unresolved} 个未解决 review thread` }
   }
+  const manualBlockGate = manualMergeBlockGate(repo, pr)
+  if (!manualBlockGate.satisfied) return { satisfied: false, reason: manualBlockGate.reason }
   const humanGate = humanReviewGate(repo, pr)
   if (!humanGate.satisfied) return { satisfied: false, reason: humanGate.reason }
   return { satisfied: true, requiredGate, isBot, humanReason: humanGate.reason }

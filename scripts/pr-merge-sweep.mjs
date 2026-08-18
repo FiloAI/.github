@@ -12,19 +12,19 @@
 // 2026-08-05 起的混合模式分工：定时任务先跑 --dry-run 拿到过全部硬门禁的候选，
 // 由本机 AI 终审 agent 逐个读 diff 判「是什么/有无危害/与描述相符」，判过的才用
 // --repo X --pr N 定点合并（本脚本是唯一合并执行通道，合并方式仍由脚本判定）。
-// 裸跑（无 --pr）仍是全量模式，仅供人工兜底，常规链路不再直接用。
+// 全量实合并永久禁用；只有 --dry-run 可全量列候选，实合并必须定点并绑定 expected head。
 //
 // 每个候选 PR 的门禁（全部满足才合并）：
 //   1. 非 draft、base 在允许列表、无 no-automerge、mergeable=MERGEABLE
 //   2. 当前 base ruleset 声明的全部 required status checks = success（没有则不虚构）
-//   3. 人类作者 PR 有绑定当前 head 的 Codex 结论
-//   4. 0 个未解决 review thread
-//   5. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
+//   3. 0 个未解决 review thread
+//   4. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
 // Greptile、Confidence、改动规模、作者身份分级与产品/视觉分类均不是合并门禁。
+// GitHub Codex Review 也不是门禁；自动出现时只作非约束性辅助信息，不召唤、不等待。
+// 候选由运行本任务的 Codex 读取当前 head 完整 diff 自审。
 // 合并方式：bot 作者 squash，人类作者 merge commit（与 frontend 既有约定一致）。
 
 import { execFileSync } from 'node:child_process'
-import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
 import {
@@ -36,12 +36,18 @@ import {
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
+const HELP = process.argv.includes('--help') || process.argv.includes('-h')
 const repoArgIdx = process.argv.indexOf('--repo')
 const ONLY_REPO = repoArgIdx > -1 ? process.argv[repoArgIdx + 1] : null
 const prArgIdx = process.argv.indexOf('--pr')
 const ONLY_PR = prArgIdx > -1 ? Number(process.argv[prArgIdx + 1]) : null
 const expectedHeadIdx = process.argv.indexOf('--expected-head')
 const EXPECTED_HEAD = expectedHeadIdx > -1 ? process.argv[expectedHeadIdx + 1] : null
+if (HELP) {
+  console.log('用法: node scripts/pr-merge-sweep.mjs --dry-run [--repo owner/name]')
+  console.log('      node scripts/pr-merge-sweep.mjs --repo owner/name --pr <number> --expected-head <40位SHA>')
+  process.exit(0)
+}
 if (ONLY_PR !== null && (!Number.isInteger(ONLY_PR) || !ONLY_REPO)) {
   console.error('--pr 需要一个整数且必须与 --repo 同用')
   process.exit(1)
@@ -52,6 +58,10 @@ if (EXPECTED_HEAD && (!ONLY_PR || !/^[0-9a-f]{40}$/i.test(EXPECTED_HEAD))) {
 }
 if (!DRY_RUN && ONLY_PR !== null && !EXPECTED_HEAD) {
   console.error('定点实合并必须传 --expected-head <本机 AI 已审过的 40 位 SHA>')
+  process.exit(1)
+}
+if (!DRY_RUN && ONLY_PR === null) {
+  console.error('全量实合并已禁用；请先 --dry-run，再使用 --repo/--pr/--expected-head 定点合并')
   process.exit(1)
 }
 
@@ -166,20 +176,6 @@ function humanReviewGate(repo, pr) {
     headCommittedAt,
     reviews: normalizedReviews,
     comments,
-  })
-}
-
-function hasCodexReview(repo, prNumber, headOid) {
-  const reviews = ghJsonPaginated([
-    'api', `repos/${repo}/pulls/${prNumber}/reviews`,
-  ])
-  const comments = ghJsonPaginated([
-    'api', `repos/${repo}/issues/${prNumber}/comments`,
-  ])
-  return hasCurrentHeadCodexReview({
-    reviews,
-    comments,
-    headOid,
   })
 }
 
@@ -302,9 +298,6 @@ function evaluateCandidate(repo, pr) {
   const requiredGate = requiredChecksGate(repo, pr)
   if (!requiredGate.satisfied) return { satisfied: false, reason: requiredGate.reason }
   const isBot = pr.author?.is_bot || /\[bot\]$/.test(pr.author?.login ?? '')
-  if (!isBot && !hasCodexReview(repo, pr.number, pr.headRefOid)) {
-    return { satisfied: false, reason: '当前 head 缺 Codex 结论' }
-  }
   const unresolved = unresolvedThreads(repo, pr.number)
   if (unresolved > 0) {
     return { satisfied: false, reason: `${unresolved} 个未解决 review thread` }

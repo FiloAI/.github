@@ -11,6 +11,9 @@ const BLOCK_PATTERNS = [
   /\bmust\s+(?:be\s+)?fix(?:ed)?\s+before\s+merge\b/i,
 ]
 
+const UNCERTAIN_OR_PENDING =
+  /[?？]|(?:不过|但是|但|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不)|\b(?:but|however|still|need(?:s|ed)?\s+to|must|before|once|after|when)\b/i
+
 function classifyMergeIntentText(body) {
   const text = String(body || '').trim()
   if (!text) return null
@@ -21,8 +24,13 @@ function classifyMergeIntentText(body) {
   let intent = null
   for (const clause of clauses) {
     if (BLOCK_PATTERNS.some((pattern) => pattern.test(clause))) intent = 'block'
+    if (UNCERTAIN_OR_PENDING.test(clause)) {
+      if (intent === 'release' || isApprovalText(clause)) intent = null
+      continue
+    }
     if (isApprovalText(clause)) intent = 'release'
   }
+  if (/[?？]/.test(text) && intent === 'release') return null
   return intent
 }
 
@@ -42,7 +50,6 @@ function newerThan(candidate, current) {
 
 export function evaluateManualMergeBlockGate({
   headOid,
-  headCommittedAt,
   reviews = [],
   comments = [],
 }) {
@@ -82,7 +89,10 @@ export function evaluateManualMergeBlockGate({
     if (!login) continue
     const event = { at: eventTimestamp(comment.created_at), index, source: 'comment', login: comment.login }
     const intent = classifyMergeIntentText(comment.body)
-    if (intent === 'release' && event.at >= headCommittedAt) {
+    const referencedShas = String(comment.body || '').match(/\b[0-9a-f]{7,40}\b/gi) || []
+    const referencesCurrentHead = referencedShas.some((sha) =>
+      String(headOid || '').toLowerCase().startsWith(sha.toLowerCase()))
+    if (intent === 'release' && referencesCurrentHead) {
       if (newerThan(event, latestReleaseByLogin.get(login))) latestReleaseByLogin.set(login, event)
       continue
     }

@@ -6,8 +6,6 @@ import {
   isMergeBlockText,
 } from './manual-merge-block-gate.mjs'
 
-const HEAD_TIME = Date.parse('2026-08-17T10:00:00Z')
-
 test('识别 #3420 波波的普通评论为明确合并阻断', () => {
   assert.equal(isMergeBlockText('这里有一个需要修复的功能阻断：FREE 降级用户的 Automation 仍可能执行。'), true)
 })
@@ -37,7 +35,7 @@ test('同一评论中以最后一个明确意图为准', () => {
 
 test('同一条评论里的最终阻止不会被前文批准吞掉', () => {
   const gate = evaluateManualMergeBlockGate({
-    headOid: 'head-a', headCommittedAt: HEAD_TIME,
+    headOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     comments: [{
       login: 'jerboy', permission: 'write',
       body: '可以合并，不过这仍是一个 merge blocker。',
@@ -47,10 +45,28 @@ test('同一条评论里的最终阻止不会被前文批准吞掉', () => {
   assert.equal(gate.satisfied, false)
 })
 
+test('疑问和仍带前置条件的文本不能解除阻止', () => {
+  for (const body of [
+    '现在可以合并吗？',
+    '可以合并，不过需要先修复状态不一致。',
+    '可以合并，但是还要处理退款数据。',
+    'Can we merge now?',
+    'OK to merge, but this still needs a fix.',
+  ]) {
+    const gate = evaluateManualMergeBlockGate({
+      headOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      comments: [
+        { login: 'jerboy', permission: 'write', body: '当前不宜合并。', created_at: '2026-08-17T10:10:00Z' },
+        { login: 'jerboy', permission: 'write', body, created_at: '2026-08-17T10:20:00Z' },
+      ],
+    })
+    assert.equal(gate.satisfied, false, body)
+  }
+})
+
 test('有权限成员普通评论阻止后 fail-closed', () => {
   const gate = evaluateManualMergeBlockGate({
-    headOid: 'head-a',
-    headCommittedAt: HEAD_TIME,
+    headOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     comments: [{
       login: 'jerboy', permission: 'write',
       body: '这里有一个需要修复的功能阻断。',
@@ -63,8 +79,7 @@ test('有权限成员普通评论阻止后 fail-closed', () => {
 
 test('作者 push 新 head 不会自动清除原阻止者的门', () => {
   const gate = evaluateManualMergeBlockGate({
-    headOid: 'head-b',
-    headCommittedAt: Date.parse('2026-08-17T11:00:00Z'),
+    headOid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     comments: [{
       login: 'jerboy', permission: 'write', body: '当前不宜合并。',
       created_at: '2026-08-17T10:32:27Z',
@@ -75,7 +90,7 @@ test('作者 push 新 head 不会自动清除原阻止者的门', () => {
 
 test('其他成员批准不能覆盖原阻止者', () => {
   const gate = evaluateManualMergeBlockGate({
-    headOid: 'head-a', headCommittedAt: HEAD_TIME,
+    headOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     comments: [
       { login: 'jerboy', permission: 'write', body: '当前不宜合并。', created_at: '2026-08-17T10:32:27Z' },
       { login: 'alice', permission: 'maintain', body: '可以合并', created_at: '2026-08-17T10:40:00Z' },
@@ -86,36 +101,36 @@ test('其他成员批准不能覆盖原阻止者', () => {
 
 test('同秒发生的放行与阻止保守地保持阻止', () => {
   const gate = evaluateManualMergeBlockGate({
-    headOid: 'head-a', headCommittedAt: HEAD_TIME,
+    headOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     comments: [{
       login: 'jerboy', permission: 'write', body: '当前不宜合并。',
       created_at: '2026-08-17T10:32:27Z',
     }],
     reviews: [{
-      login: 'jerboy', permission: 'write', state: 'APPROVED', commit_id: 'head-a',
+      login: 'jerboy', permission: 'write', state: 'APPROVED', commit_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       submitted_at: '2026-08-17T10:32:27Z',
     }],
   })
   assert.equal(gate.satisfied, false)
 })
 
-test('原阻止者针对当前 head 明确放行后解除', () => {
+test('原阻止者明确引用当前 head 放行后解除', () => {
   const gate = evaluateManualMergeBlockGate({
-    headOid: 'head-a', headCommittedAt: HEAD_TIME,
+    headOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     comments: [
       { login: 'jerboy', permission: 'write', body: '当前不宜合并。', created_at: '2026-08-17T10:32:27Z' },
-      { login: 'jerboy', permission: 'write', body: '阻断已修复，可以合并。', created_at: '2026-08-17T10:40:00Z' },
+      { login: 'jerboy', permission: 'write', body: '阻断已修复，可以合并 aaaaaaa。', created_at: '2026-08-17T10:40:00Z' },
     ],
   })
   assert.equal(gate.satisfied, true)
 })
 
-test('原阻止者批准旧 head 不能解除新 head 阻止', () => {
+test('原阻止者未引用当前 head 的文字放行不能解除阻止', () => {
   const gate = evaluateManualMergeBlockGate({
-    headOid: 'head-b', headCommittedAt: Date.parse('2026-08-17T11:00:00Z'),
+    headOid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     comments: [
       { login: 'jerboy', permission: 'write', body: '当前不宜合并。', created_at: '2026-08-17T10:32:27Z' },
-      { login: 'jerboy', permission: 'write', body: '可以合并。', created_at: '2026-08-17T10:40:00Z' },
+      { login: 'jerboy', permission: 'write', body: '可以合并 aaaaaaa。', created_at: '2026-08-17T11:40:00Z' },
     ],
   })
   assert.equal(gate.satisfied, false)
@@ -123,13 +138,13 @@ test('原阻止者批准旧 head 不能解除新 head 阻止', () => {
 
 test('原阻止者正式 APPROVED 当前 head 后解除', () => {
   const gate = evaluateManualMergeBlockGate({
-    headOid: 'head-b', headCommittedAt: Date.parse('2026-08-17T11:00:00Z'),
+    headOid: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
     comments: [{
       login: 'jerboy', permission: 'write', body: '当前不宜合并。',
       created_at: '2026-08-17T10:32:27Z',
     }],
     reviews: [{
-      login: 'jerboy', permission: 'write', state: 'APPROVED', commit_id: 'head-b',
+      login: 'jerboy', permission: 'write', state: 'APPROVED', commit_id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       submitted_at: '2026-08-17T11:10:00Z',
     }],
   })
@@ -138,7 +153,7 @@ test('原阻止者正式 APPROVED 当前 head 后解除', () => {
 
 test('正式 CHANGES_REQUESTED 在无标签时同样阻止', () => {
   const gate = evaluateManualMergeBlockGate({
-    headOid: 'head-a', headCommittedAt: HEAD_TIME,
+    headOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     reviews: [{
       login: 'jerboy', permission: 'write', state: 'CHANGES_REQUESTED', commit_id: 'head-a',
       submitted_at: '2026-08-17T10:32:27Z',
@@ -149,7 +164,7 @@ test('正式 CHANGES_REQUESTED 在无标签时同样阻止', () => {
 
 test('dismissed 的 CHANGES_REQUESTED 不再构成阻止', () => {
   const gate = evaluateManualMergeBlockGate({
-    headOid: 'head-a', headCommittedAt: HEAD_TIME,
+    headOid: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     reviews: [{
       id: 42,
       login: 'jerboy', permission: 'write', state: 'CHANGES_REQUESTED', commit_id: 'head-a',

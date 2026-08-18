@@ -26,6 +26,7 @@
 // 合并方式：bot 作者 squash，人类作者 merge commit（与 frontend 既有约定一致）。
 
 import { execFileSync } from 'node:child_process'
+import { isConfirmedMissingCollaborator } from './collaborator-permission.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { evaluateManualMergeBlockGate } from './manual-merge-block-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
@@ -37,14 +38,37 @@ import {
 } from './merge-execution-policy.mjs'
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 
-const DRY_RUN = process.argv.includes('--dry-run')
-const HELP = process.argv.includes('--help') || process.argv.includes('-h')
-const repoArgIdx = process.argv.indexOf('--repo')
-const ONLY_REPO = repoArgIdx > -1 ? process.argv[repoArgIdx + 1] : null
-const prArgIdx = process.argv.indexOf('--pr')
-const ONLY_PR = prArgIdx > -1 ? Number(process.argv[prArgIdx + 1]) : null
-const expectedHeadIdx = process.argv.indexOf('--expected-head')
-const EXPECTED_HEAD = expectedHeadIdx > -1 ? process.argv[expectedHeadIdx + 1] : null
+const VALUE_ARGS = new Set(['--repo', '--pr', '--expected-head'])
+const FLAG_ARGS = new Set(['--dry-run', '--help', '-h'])
+const parsedArgs = new Map()
+for (let index = 2; index < process.argv.length; index++) {
+  const arg = process.argv[index]
+  if (FLAG_ARGS.has(arg)) {
+    if (parsedArgs.has(arg)) {
+      console.error(`参数重复：${arg}`)
+      process.exit(1)
+    }
+    parsedArgs.set(arg, true)
+    continue
+  }
+  if (!VALUE_ARGS.has(arg)) {
+    console.error(`未知参数：${arg}`)
+    process.exit(1)
+  }
+  const value = process.argv[index + 1]
+  if (!value || value.startsWith('--') || parsedArgs.has(arg)) {
+    console.error(`参数缺值或重复：${arg}`)
+    process.exit(1)
+  }
+  parsedArgs.set(arg, value)
+  index++
+}
+
+const DRY_RUN = parsedArgs.has('--dry-run')
+const HELP = parsedArgs.has('--help') || parsedArgs.has('-h')
+const ONLY_REPO = parsedArgs.get('--repo') || null
+const ONLY_PR = parsedArgs.has('--pr') ? Number(parsedArgs.get('--pr')) : null
+const EXPECTED_HEAD = parsedArgs.get('--expected-head') || null
 if (HELP) {
   console.log('用法: node scripts/pr-merge-sweep.mjs --dry-run [--repo owner/name]')
   console.log('      node scripts/pr-merge-sweep.mjs --repo owner/name --pr <number> --expected-head <40位SHA>')
@@ -101,9 +125,12 @@ function collaboratorPermission(repo, login) {
     ]).trim()
     permissionCache.set(key, permission)
     return permission
-  } catch {
-    permissionCache.set(key, null)
-    return null
+  } catch (error) {
+    if (isConfirmedMissingCollaborator(error)) {
+      permissionCache.set(key, null)
+      return null
+    }
+    throw new Error(`无法确认 ${login} 在 ${repo} 的权限：${String(error.message || error).slice(0, 160)}`)
   }
 }
 
@@ -182,9 +209,6 @@ function humanReviewGate(repo, pr) {
 }
 
 function manualMergeBlockGate(repo, pr) {
-  const headCommittedAt = Date.parse(gh([
-    'api', `repos/${repo}/commits/${pr.headRefOid}`, '--jq', '.commit.committer.date',
-  ]).trim()) || 0
   const comments = ghJsonPaginated([
     'api', `repos/${repo}/issues/${pr.number}/comments`,
   ]).map((comment) => ({
@@ -212,7 +236,6 @@ function manualMergeBlockGate(repo, pr) {
   })
   return evaluateManualMergeBlockGate({
     headOid: pr.headRefOid,
-    headCommittedAt,
     comments,
     reviews: normalizedReviews,
   })

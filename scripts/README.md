@@ -19,6 +19,8 @@ node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 --expect
 
 脚本不会自动 approve、不会写“终审意见”、不会创建“团队待办”，也不使用 `--admin` 绕过 GitHub 规则。定点实合并必须用 `--expected-head` 传入本机 AI 已审的完整 SHA，并继续用 `--match-head-commit` 绑定该 head；合并前会重读 PR 元数据与全部硬门禁，合并后回读 merged / queued / scheduled 实时状态。
 
+定点合并失败时，脚本会在对应 PR 回复 GitHub 返回的具体原因，并用当前 head 的隐藏标记更新同一条失败评论，避免周期任务重复刷屏。失败评论本身发送失败只记日志，不覆盖原始合并错误。
+
 活体任务由 Cindy scheduler 管理；前置检查脚本必须通过 `schedule_set_pre_run_hook` 安装和自测，不直接写入 ignored 的 `scripts/schedule-checks/`。仓库里的本文件只记录脚本契约，不作为另一套流程规范。
 
 想让某个 PR 不被自动合并：打 `no-automerge` 标签或保持 draft。

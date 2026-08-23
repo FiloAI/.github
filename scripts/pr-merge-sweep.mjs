@@ -28,6 +28,11 @@ import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
 import {
+  buildMergeFailureComment,
+  buildMergeFailureCommentArgs,
+  mergeFailureMarker,
+} from './merge-failure-comment.mjs'
+import {
   buildMergeArgs,
   classifyMergeOutcome,
   matchesExpectedHead,
@@ -76,6 +81,21 @@ function ghJson(args) {
 
 function ghJsonPaginated(args) {
   return flattenPaginatedPages(ghJson([...args, '--paginate', '--slurp']))
+}
+
+function replyMergeFailure(repo, pr, error) {
+  const marker = mergeFailureMarker(pr.headRefOid)
+  const body = buildMergeFailureComment({ headOid: pr.headRefOid, error })
+  let commentId = null
+  try {
+    const comments = ghJsonPaginated([
+      'api', `repos/${repo}/issues/${pr.number}/comments`,
+    ])
+    commentId = comments.findLast((comment) => String(comment.body || '').includes(marker))?.id ?? null
+  } catch (lookupError) {
+    console.log(`[${repo}#${pr.number}] MERGE FAILURE COMMENT LOOKUP FAILED: ${String(lookupError.message).slice(0, 160)}`)
+  }
+  gh(buildMergeFailureCommentArgs({ repo, number: pr.number, body, commentId }))
 }
 
 const permissionCache = new Map()
@@ -407,7 +427,14 @@ for (const repo of REPOS) {
       console.log(`${tag} MERGED (${method}) commit=${mergedPr.mergeCommit?.oid || 'unknown'} — ${pr.title}`)
       totalMerged++
     } catch (e) {
-      console.log(`${tag} MERGE FAILED: ${String(e.message).slice(0, 200)}`)
+      const reason = String(e.message || e).slice(0, 200)
+      console.log(`${tag} MERGE FAILED: ${reason}`)
+      try {
+        replyMergeFailure(repo, pr, e)
+        console.log(`${tag} MERGE FAILURE REPLIED`)
+      } catch (commentError) {
+        console.log(`${tag} MERGE FAILURE REPLY FAILED: ${String(commentError.message || commentError).slice(0, 200)}`)
+      }
     }
   }
   if (prs.length === 0) console.log(`[${repo}] 无 open PR`)

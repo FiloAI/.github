@@ -47,17 +47,17 @@ test('高风险改动要求 Chris 或 Bobo 对当前 head 留下批准', () => {
   assert.equal(approved.satisfied, true)
 })
 
-test('作者不能用自己的 GitHub approval 满足高风险门，但显式 owner 会话授权 marker 可审计', () => {
-  const result = evaluateHighRiskApproval({
-    headOid: head,
-    authorLogin: 'zqchris',
-    highRisk: true,
-    riskReason: 'path:.github/workflows/ci.yml',
-    reviews: [{ login: 'zqchris', state: 'APPROVED', commit_id: head }],
-    comments: [{ login: 'zqchris', body: ownerApprovalMarker(head) }],
-  })
-  assert.equal(result.satisfied, true)
-  assert.equal(result.evidence, 'owner-marker:zqchris')
+test('Chris 或 Bobo 自己提交高风险改动时不再要求额外 owner 确认', () => {
+  for (const authorLogin of ['zqchris', 'xd-bobo']) {
+    const result = evaluateHighRiskApproval({
+      headOid: head,
+      authorLogin,
+      highRisk: true,
+      riskReason: 'path:.github/workflows/ci.yml',
+    })
+    assert.equal(result.satisfied, true, authorLogin)
+    assert.equal(result.evidence, `owner-author:${authorLogin}`, authorLogin)
+  }
 })
 
 test('普通确认、旧 head 和非 owner marker 不放行高风险改动', () => {

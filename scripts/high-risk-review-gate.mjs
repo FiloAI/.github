@@ -59,6 +59,9 @@ export function evaluateHighRiskApproval({
 }) {
   if (!highRisk) return { satisfied: true, reason: null, evidence: null }
   const author = String(authorLogin || '').toLowerCase()
+  if (OWNER_LOGINS.has(author)) {
+    return { satisfied: true, reason: null, evidence: `owner-author:${author}` }
+  }
 
   const review = reviews.find((item) => {
     const login = String(item.login || '').toLowerCase()

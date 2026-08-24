@@ -23,11 +23,13 @@ Owner-side AI 审核当前 head 无问题后写入：
 <!-- filoai-merge-steward:reviewed head=<40位SHA> verdict=pass -->
 ```
 
-高风险改动经 Chris 或 Bobo 确认当前 head 后写入：
+非 owner 作者提交的高风险改动，经 Chris 或 Bobo 确认当前 head 后写入：
 
 ```html
 <!-- filoai-merge-steward:owner-approved head=<40位SHA> -->
 ```
+
+Chris 或 Bobo 自己提交的 PR 不再设置额外 owner 确认门；required CI、当前 head 审核证据、未解决线程和明确人工阻塞仍照常检查。
 
 脚本不会自动 approve、不会写“终审意见”、不会创建“团队待办”，也不使用 `--admin` 绕过 GitHub 规则。定点实合并必须用 `--expected-head` 传入本机 AI 已审的完整 SHA，并继续用 `--match-head-commit` 绑定该 head；合并前会重读 PR 元数据与全部硬门禁，合并后回读 merged / queued / scheduled 实时状态。
 

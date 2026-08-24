@@ -29,14 +29,16 @@ test('同一条 owner 请求评论可幂等更新', () => {
   ])
 })
 
-test('非 Chris 作者正式 request Chris，Chris 自己是作者时不请求自己', () => {
+test('非 owner 作者正式 request Chris，Chris/Bobo 自己是作者时不额外请求 owner', () => {
   assert.deepEqual(buildFormalReviewerRequestArgs({
     repo: 'FiloAI/filoai-frontend', number: 3557, authorLogin: 'contributor',
   }), [
     'api', 'repos/FiloAI/filoai-frontend/pulls/3557/requested_reviewers', '--method', 'POST',
     '-f', 'reviewers[]=zqchris',
   ])
-  assert.equal(buildFormalReviewerRequestArgs({
-    repo: 'FiloAI/filoai-frontend', number: 3557, authorLogin: 'zqchris',
-  }), null)
+  for (const authorLogin of ['zqchris', 'xd-bobo']) {
+    assert.equal(buildFormalReviewerRequestArgs({
+      repo: 'FiloAI/filoai-frontend', number: 3557, authorLogin,
+    }), null, authorLogin)
+  }
 })

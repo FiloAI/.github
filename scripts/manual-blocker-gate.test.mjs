@@ -15,6 +15,20 @@ test('外部机器人风险评论不构成真人阻止', () => {
   }).satisfied, true)
 })
 
+test('Chris 或 Bobo 的明确 veto 不受仓库 collaborator 权限字段影响', () => {
+  for (const login of ['zqchris', 'xd-bobo']) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login, permission: 'none', body: '当前不要合并，仍有安全风险。',
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    })
+    assert.equal(result.satisfied, false, login)
+    assert.deepEqual(result.blockers, [login], login)
+  }
+})
+
 test('有权限者明确不要合并会阻塞', () => {
   const result = evaluateManualBlockers({
     headOid,

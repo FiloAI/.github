@@ -2,6 +2,8 @@ function clean(value) {
   return String(value || '').replace(/```/g, "'''").trim()
 }
 
+const OWNER_LOGINS = new Set(['zqchris', 'xd-bobo'])
+
 export const OWNER_REVIEW_REQUEST_MARKER = '<!-- filoai-merge-steward:owner-review-request -->'
 
 export function buildOwnerReviewRequest({ headOid, reason }) {
@@ -23,7 +25,7 @@ export function buildOwnerReviewCommentArgs({ repo, number, body, commentId = nu
 }
 
 export function buildFormalReviewerRequestArgs({ repo, number, authorLogin }) {
-  if (String(authorLogin || '').toLowerCase() === 'zqchris') return null
+  if (OWNER_LOGINS.has(String(authorLogin || '').toLowerCase())) return null
   return [
     'api', `repos/${repo}/pulls/${number}/requested_reviewers`, '--method', 'POST',
     '-f', 'reviewers[]=zqchris',

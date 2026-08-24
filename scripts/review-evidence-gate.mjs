@@ -52,7 +52,7 @@ export function evaluateReviewEvidence({
       && PASS_STATES.has(state)
       && sameHead(review.commit_id, headOid)
       && !isFailedReview(body)
-      && (state === 'APPROVED' || isSubstantiveCommentedReview(body))
+      && (state === 'APPROVED' || isSubstantiveCommentedReview(body) || review.hasInlineComments === true)
   })
   if (formalReview) {
     return {

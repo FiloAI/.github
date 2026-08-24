@@ -117,3 +117,21 @@ test('不引用当前 SHA 的普通确认不能解除跨 head 阻止', () => {
     ],
   }).satisfied, false)
 })
+
+test('合并管家自己的终审与失败评论不反向生成真人阻止', () => {
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    comments: [
+      {
+        login: 'owner', permission: 'admin',
+        body: 'Cursor 风险评级不能单独卡住合并。\n<!-- merge-steward-verdict:repo#1:abcdef -->',
+        created_at: '2026-08-24T00:00:00Z',
+      },
+      {
+        login: 'owner', permission: 'admin',
+        body: '<!-- filoai-merge-steward:failure head=abcdef -->\n【合并管家】本轮未合并',
+        created_at: '2026-08-24T00:01:00Z',
+      },
+    ],
+  }).satisfied, true)
+})

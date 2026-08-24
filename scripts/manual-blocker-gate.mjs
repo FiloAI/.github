@@ -13,6 +13,11 @@ const APPROVAL_PATTERN =
 const UNCERTAIN_OR_PENDING =
   /[?？]|(?:不过|但是|但|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不)|\b(?:but|however|still|need(?:s|ed)?\s+to|must|before|once|after|when)\b/i
 
+const STEWARD_MARKERS = [
+  'merge-steward-verdict:',
+  'filoai-merge-steward:failure',
+]
+
 function hasReviewPermission(permission) {
   return REVIEW_PERMISSIONS.has(String(permission || '').toLowerCase())
 }
@@ -49,6 +54,7 @@ export function evaluateManualBlockers({ headOid, reviews = [], comments = [] })
 
   for (const comment of comments) {
     if (!hasReviewPermission(comment.permission)) continue
+    if (STEWARD_MARKERS.some((marker) => String(comment.body || '').includes(marker))) continue
     const at = Date.parse(comment.created_at || 0) || 0
     const clauses = String(comment.body || '')
       .split(/[。！？!?；;，,\n]+|\.(?:\s+|$)/)

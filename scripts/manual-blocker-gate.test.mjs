@@ -285,3 +285,14 @@ test('同一段先说无 CI 阻断、随后明确不要合并时仍然阻塞', (
     }],
   }).satisfied, false)
 })
+
+test('测试通过不能解除人工合并阻止', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    comments: [
+      { login: 'reviewer', permission: 'write', body: '不要合并', created_at: '2026-08-24T00:00:00Z' },
+      { login: 'reviewer', permission: 'write', body: `测试已通过 ${headOid.slice(0, 7)}`, created_at: '2026-08-24T00:01:00Z' },
+    ],
+  })
+  assert.equal(result.satisfied, false)
+})

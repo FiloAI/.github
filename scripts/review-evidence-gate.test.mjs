@@ -23,6 +23,30 @@ test('接受非作者针对当前 head 的正式 review', () => {
   assert.equal(result.evidence, 'formal-review:reviewer')
 })
 
+test('COMMENTED review 必须有实质审查内容，空评论或未审查声明不能放行', () => {
+  for (const body of ['', 'hello', 'I did not review this PR']) {
+    const result = evaluateReviewEvidence({
+      headOid: head,
+      authorLogin: 'author',
+      reviews: [{ login: 'reviewer', state: 'COMMENTED', body, commit_id: head }],
+    })
+    assert.equal(result.satisfied, false)
+  }
+  assert.equal(evaluateReviewEvidence({
+    headOid: head,
+    authorLogin: 'author',
+    reviews: [{ login: 'ai-reviewer', state: 'COMMENTED', body: 'No findings on this head.', commit_id: head }],
+  }).satisfied, true)
+})
+
+test('没有审查意见是有效的通过总结，不会误判为审查失败', () => {
+  assert.equal(evaluateReviewEvidence({
+    headOid: head,
+    authorLogin: 'author',
+    reviews: [{ login: 'reviewer', state: 'COMMENTED', body: '没有审查意见，未发现问题。', commit_id: head }],
+  }).satisfied, true)
+})
+
 test('作者自审、旧 head 与失败或拒审答复均不算审核凭证', () => {
   const result = evaluateReviewEvidence({
     headOid: head,

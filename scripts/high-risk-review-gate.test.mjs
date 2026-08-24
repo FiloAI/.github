@@ -16,6 +16,8 @@ test('只按明确风险标签或敏感路径触发，不按 PR 大小触发', (
   assert.equal(classifyHighRisk({ repo: 'FiloAI/filoai-frontend', labels: ['risk:owner-review'] }).highRisk, true)
   assert.equal(classifyHighRisk({ repo: 'FiloAI/filoai-frontend', files: ['CODEOWNERS'] }).highRisk, true)
   assert.equal(classifyHighRisk({ repo: 'FiloAI/filoai-frontend', files: ['docs/CODEOWNERS'] }).highRisk, true)
+  assert.equal(classifyHighRisk({ repo: 'FiloAI/filoai-frontend', files: ['src/AuthService.ts'] }).highRisk, true)
+  assert.equal(classifyHighRisk({ repo: 'FiloAI/FiloMailCenter', files: ['services/paymentClient.kt'] }).highRisk, true)
 })
 
 test('组织合并与 review 门禁脚本本身属于高风险', () => {

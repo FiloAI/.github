@@ -16,6 +16,8 @@ const HIGH_RISK_PATHS = [
   /(^|\/)(?:migration|migrations|schema)(\/|\.|$)/i,
   /(^|\/)(?:deploy|deployment|production|prod)(\/|\.|$)/i,
   /(?:\.entitlements$|signing|provisioning|system-permission)/i,
+  /(^|\/)(?:Auth(?:entication|orization)?|Security|Permissions?|Payments?|Billing|Subscriptions?|Quota|Entitlements?|Migration|Schema|Deploy(?:ment)?|Production)[A-Za-z0-9_.-]*$/,
+  /(^|\/)(?:auth(?:entication|orization)?|security|permissions?|payments?|billing|subscriptions?|quota|entitlements?|migration|schema|deploy(?:ment)?|production)[A-Z][A-Za-z0-9_.-]*$/,
 ]
 
 const ORG_AUTOMATION_PATHS = [

@@ -18,14 +18,13 @@
 //   1. 非 draft、base 在允许列表、无 no-automerge、mergeable=MERGEABLE
 //   2. 当前 base ruleset 声明的全部 required status checks = success（没有则不虚构）
 //   3. 0 个未解决 review thread
-//   4. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
-// 外部 reviewer 的到场、缺席或拒审不是脚本门禁；定时任务必须在调用定点合并前完成当前
-// head 的完整代审，并把发现的问题写成 inline review thread。
+// needs-human-review、外部 reviewer 的到场/缺席/失败/拒审/风险评级/转人工都不是脚本门禁；
+// 定时任务必须在调用定点合并前完成当前 head 的完整代审，并把发现的问题写成 inline review thread。
 // 合并方式：bot 作者 squash，人类作者 merge commit（与 frontend 既有约定一致）。
 
 import { execFileSync } from 'node:child_process'
-import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
+import { evaluateMergeLabels } from './merge-label-policy.mjs'
 import {
   buildMergeFailureComment,
   buildMergeFailureCommentArgs,
@@ -99,97 +98,6 @@ function replyMergeFailure(repo, pr, error, { outcomeUnverified = false } = {}) 
     console.log(`[${repo}#${pr.number}] MERGE FAILURE COMMENT LOOKUP FAILED: ${String(lookupError.message).slice(0, 160)}`)
   }
   gh(buildMergeFailureCommentArgs({ repo, number: pr.number, body, commentId }))
-}
-
-const permissionCache = new Map()
-
-function collaboratorPermission(repo, login) {
-  const key = `${repo}:${login}`
-  if (permissionCache.has(key)) return permissionCache.get(key)
-  try {
-    const permission = gh([
-      'api', `repos/${repo}/collaborators/${login}/permission`, '--jq', '.permission',
-    ]).trim()
-    permissionCache.set(key, permission)
-    return permission
-  } catch {
-    permissionCache.set(key, null)
-    return null
-  }
-}
-
-function reviewDismissalInfo(repo, prNumber) {
-  const [owner, name] = repo.split('/')
-  const dismissalByReviewId = new Map()
-  let cursor = null
-  let hasNextPage = true
-  while (hasNextPage) {
-    const after = cursor ? `, after: ${JSON.stringify(cursor)}` : ''
-    const query = `query { repository(owner: "${owner}", name: "${name}") {
-      pullRequest(number: ${prNumber}) { timelineItems(first: 100${after}, itemTypes: [REVIEW_DISMISSED_EVENT]) {
-        nodes { ... on ReviewDismissedEvent { createdAt previousReviewState review { databaseId } } }
-        pageInfo { hasNextPage endCursor }
-      } } } }`
-    const timeline = ghJson(['api', 'graphql', '-f', `query=${query}`])
-      .data.repository.pullRequest.timelineItems
-    for (const event of timeline.nodes) {
-      if (event.review?.databaseId) {
-        dismissalByReviewId.set(event.review.databaseId, {
-          dismissedAt: event.createdAt,
-          previousState: event.previousReviewState,
-        })
-      }
-    }
-    hasNextPage = timeline.pageInfo.hasNextPage
-    cursor = timeline.pageInfo.endCursor
-  }
-  return dismissalByReviewId
-}
-
-function humanReviewGate(repo, pr) {
-  const hasLabel = pr.labels.some((label) => label.name === 'needs-human-review')
-  if (!hasLabel) return { satisfied: true, reason: null }
-
-  const authorLogin = pr.author?.login || ''
-  const authorPermission = collaboratorPermission(repo, authorLogin)
-  const headCommittedAt = Date.parse(gh([
-    'api', `repos/${repo}/commits/${pr.headRefOid}`, '--jq', '.commit.committer.date',
-  ]).trim()) || 0
-  const commentPages = ghJson([
-    'api', `repos/${repo}/issues/${pr.number}/comments`, '--paginate', '--slurp',
-  ])
-  const comments = commentPages.flat().map((comment) => ({
-    login: comment.user?.login || '',
-    permission: collaboratorPermission(repo, comment.user?.login || ''),
-    body: comment.body || '',
-    created_at: comment.created_at,
-  }))
-  const reviews = ghJsonPaginated([
-    'api', `repos/${repo}/pulls/${pr.number}/reviews`,
-  ])
-  const dismissalByReviewId = reviewDismissalInfo(repo, pr.number)
-  const normalizedReviews = reviews.map((review) => {
-    const dismissal = dismissalByReviewId.get(review.id)
-    return {
-    id: review.id,
-    login: review.user?.login || '',
-    permission: collaboratorPermission(repo, review.user?.login || ''),
-    state: review.state || '',
-    commit_id: review.commit_id || '',
-    submitted_at: review.submitted_at,
-    dismissed_at: dismissal?.dismissedAt || null,
-    dismissed_previous_state: dismissal?.previousState || null,
-  }
-  })
-  return evaluateHumanReviewGate({
-    hasLabel,
-    authorLogin,
-    authorPermission,
-    headOid: pr.headRefOid,
-    headCommittedAt,
-    reviews: normalizedReviews,
-    comments,
-  })
 }
 
 function unresolvedThreads(repo, prNumber) {
@@ -301,9 +209,8 @@ function evaluateCandidate(repo, pr) {
   if (!REPO_BASES[repo].includes(pr.baseRefName)) {
     return { satisfied: false, reason: `base=${pr.baseRefName} 不在允许列表 [${REPO_BASES[repo]}]` }
   }
-  if (pr.labels.some((label) => label.name === 'no-automerge')) {
-    return { satisfied: false, reason: 'no-automerge 标签' }
-  }
+  const labelGate = evaluateMergeLabels(pr.labels)
+  if (!labelGate.satisfied) return labelGate
   if (pr.mergeable !== 'MERGEABLE') {
     return { satisfied: false, reason: `mergeable=${pr.mergeable}` }
   }
@@ -315,9 +222,7 @@ function evaluateCandidate(repo, pr) {
   if (unresolved > 0) {
     return { satisfied: false, reason: `${unresolved} 个未解决 review thread` }
   }
-  const humanGate = humanReviewGate(repo, pr)
-  if (!humanGate.satisfied) return { satisfied: false, reason: humanGate.reason }
-  return { satisfied: true, requiredGate, isBot, humanReason: humanGate.reason }
+  return { satisfied: true, requiredGate, isBot }
 }
 
 let totalMerged = 0
@@ -365,8 +270,6 @@ for (const repo of REPOS) {
     const candidate = evaluateCandidate(repo, pr)
     if (!candidate.satisfied) { skip(candidate.reason); continue }
     const { isBot } = candidate
-    if (candidate.humanReason) console.log(`${tag} HUMAN GATE SATISFIED: ${candidate.humanReason}`)
-
     const method = isBot ? '--squash' : '--merge'
     if (DRY_RUN) {
       console.log(`${tag} WOULD MERGE (${method}) head=${pr.headRefOid} — ${pr.title}`)

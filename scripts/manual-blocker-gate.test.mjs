@@ -135,3 +135,55 @@ test('合并管家自己的终审与失败评论不反向生成真人阻止', ()
     ],
   }).satisfied, true)
 })
+
+test('不同意合并不能因包含同意合并子串而解除阻止', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    comments: [
+      {
+        login: 'reviewer', permission: 'write', body: '不要合并。',
+        created_at: '2026-08-24T00:00:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write', body: `不同意合并 ${headOid.slice(0, 8)}`,
+        created_at: '2026-08-24T00:01:00Z',
+      },
+    ],
+  })
+  assert.equal(result.satisfied, false)
+  assert.deepEqual(result.blockers, ['reviewer'])
+})
+
+test('not approved 不能因包含 approved 而解除阻止', () => {
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    comments: [
+      {
+        login: 'reviewer', permission: 'write', body: 'Do not merge.',
+        created_at: '2026-08-24T00:00:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write', body: `Not approved ${headOid.slice(0, 8)}`,
+        created_at: '2026-08-24T00:01:00Z',
+      },
+    ],
+  }).satisfied, false)
+})
+
+test('否认存在 merge blocker 的说明不是阻止', () => {
+  for (const body of [
+    'No merge blockers',
+    'No merge blocker found',
+    '没有合并阻塞',
+    '未发现 merge blocker',
+    'Cursor 风险评级不能单独阻塞合并',
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    }).satisfied, true, body)
+  }
+})

@@ -1,4 +1,5 @@
 const REVIEW_PERMISSIONS = new Set(['admin', 'maintain', 'write'])
+const OWNER_VETO_LOGINS = new Set(['zqchris', 'xd-bobo'])
 
 const BLOCK_PATTERNS = [
   /(?:当前|现在|暂时)?(?:不宜|不应|不能|不可|不要|先别|暂不|禁止)[^。！？!\n]{0,24}(?:合并|merge)/i,
@@ -31,6 +32,10 @@ const STEWARD_MARKERS = [
 
 function hasReviewPermission(permission) {
   return REVIEW_PERMISSIONS.has(String(permission || '').toLowerCase())
+}
+
+function canBlock(login, permission) {
+  return hasReviewPermission(permission) || OWNER_VETO_LOGINS.has(String(login || '').toLowerCase())
 }
 
 function referencesHead(text, headOid) {
@@ -77,7 +82,7 @@ export function evaluateManualBlockers({ headOid, reviews = [], comments = [] })
 
   for (const review of reviews) {
     index++
-    if (!hasReviewPermission(review.permission) || review.is_bot) continue
+    if (!canBlock(review.login, review.permission) || review.is_bot) continue
     const at = Date.parse(review.submitted_at || 0) || 0
     const state = String(review.state || '').toUpperCase()
     if (state === 'DISMISSED') continue
@@ -100,7 +105,7 @@ export function evaluateManualBlockers({ headOid, reviews = [], comments = [] })
   }
 
   for (const comment of comments) {
-    if (!hasReviewPermission(comment.permission) || comment.is_bot) continue
+    if (!canBlock(comment.login, comment.permission) || comment.is_bot) continue
     const at = Date.parse(comment.updated_at || comment.created_at || 0) || 0
     recordTextSignals({
       body: comment.body,

@@ -262,11 +262,18 @@ function reviewEvidenceGate(repo, pr) {
     const reviews = ghJsonPaginated([
       'api', `repos/${repo}/pulls/${pr.number}/reviews`,
     ]).map((review) => ({
+      id: review.id,
       login: review.user?.login || '',
       state: review.state || '',
       body: review.body || '',
       commit_id: review.commit_id || '',
     }))
+    const inlineReviewIds = new Set(ghJsonPaginated([
+      'api', `repos/${repo}/pulls/${pr.number}/comments`,
+    ]).map((comment) => comment.pull_request_review_id).filter(Boolean))
+    for (const review of reviews) {
+      review.hasInlineComments = inlineReviewIds.has(review.id)
+    }
     const comments = ghJsonPaginated([
       'api', `repos/${repo}/issues/${pr.number}/comments`,
     ]).map((comment) => ({

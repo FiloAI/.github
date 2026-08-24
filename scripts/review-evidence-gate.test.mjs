@@ -39,6 +39,37 @@ test('COMMENTED review 必须有实质审查内容，空评论或未审查声明
   }).satisfied, true)
 })
 
+test('只有 inline review comments、summary 为空时仍算当前 head 已审', () => {
+  const result = evaluateReviewEvidence({
+    headOid: head,
+    authorLogin: 'author',
+    reviews: [{
+      login: 'reviewer',
+      state: 'COMMENTED',
+      body: '',
+      commit_id: head,
+      hasInlineComments: true,
+    }],
+  })
+  assert.equal(result.satisfied, true)
+  assert.equal(result.evidence, 'formal-review:reviewer')
+})
+
+test('inline comments 不能替代失败或拒绝审查声明', () => {
+  const result = evaluateReviewEvidence({
+    headOid: head,
+    authorLogin: 'author',
+    reviews: [{
+      login: 'reviewer',
+      state: 'COMMENTED',
+      body: 'I was unable to review this PR.',
+      commit_id: head,
+      hasInlineComments: true,
+    }],
+  })
+  assert.equal(result.satisfied, false)
+})
+
 test('没有审查意见是有效的通过总结，不会误判为审查失败', () => {
   assert.equal(evaluateReviewEvidence({
     headOid: head,

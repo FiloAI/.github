@@ -6,8 +6,7 @@
 
 ```bash
 node scripts/pr-merge-sweep.mjs --dry-run   # 只看决策不合并
-node scripts/pr-merge-sweep.mjs             # 实际合并（以执行者的 gh 登录态）
-node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend   # 只扫一个仓
+node scripts/pr-merge-sweep.mjs --dry-run --repo FiloAI/filoai-frontend   # 只扫一个仓
 node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 --expected-head <40位本机AI已审SHA> # 定点合并
 ```
 
@@ -19,7 +18,7 @@ node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 --expect
 
 脚本不会自动 approve、不会写“终审意见”、不会创建“团队待办”，也不使用 `--admin` 绕过 GitHub 规则。定点实合并必须用 `--expected-head` 传入本机 AI 已审的完整 SHA，并继续用 `--match-head-commit` 绑定该 head；合并前会重读 PR 元数据与全部硬门禁，合并后回读 merged / queued / scheduled 实时状态。
 
-定点合并失败时，脚本会在对应 PR 回复 GitHub 返回的具体原因，并用当前 head 的隐藏标记更新同一条失败评论，避免周期任务重复刷屏。失败评论本身发送失败只记日志，不覆盖原始合并错误。
+实合并永久禁止不带 `--pr` 的裸跑，避免跳过管家对具体 head 的完整审查。定点合并失败时，脚本会在对应 PR 回复 GitHub 返回的具体原因，并用本次实时观察到的 head 隐藏标记更新同一条评论，避免周期任务重复刷屏；合并命令已成功但最终状态暂时无法回读时，会明确写“结果待确认”，不会误报合并失败。评论本身发送失败只记日志，不覆盖原始错误。
 
 活体任务由 Cindy scheduler 管理；前置检查脚本必须通过 `schedule_set_pre_run_hook` 安装和自测，不直接写入 ignored 的 `scripts/schedule-checks/`。仓库里的本文件只记录脚本契约，不作为另一套流程规范。
 

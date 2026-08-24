@@ -30,6 +30,18 @@ test('失败原因清理终端颜色和 markdown fence，并限制长度', () =>
   assert.ok(reason.endsWith('…'))
 })
 
+test('合并命令成功但回读失败时不误报合并失败', () => {
+  const body = buildMergeFailureComment({
+    headOid: '48a99f165ed252a898c5088153e7ea30e3bfe36d',
+    error: new Error('GraphQL read timed out'),
+    outcomeUnverified: true,
+  })
+
+  assert.match(body, /自动合并结果待确认/)
+  assert.match(body, /合并命令已返回成功/)
+  assert.doesNotMatch(body, /自动合并未完成/)
+})
+
 test('失败回复首次创建，重复失败时更新同一条评论', () => {
   const common = { repo: 'FiloAI/filoai-frontend', number: 3410, body: 'reason' }
   assert.deepEqual(buildMergeFailureCommentArgs(common), [

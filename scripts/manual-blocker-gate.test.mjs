@@ -136,6 +136,18 @@ test('合并管家自己的终审与失败评论不反向生成真人阻止', ()
   }).satisfied, true)
 })
 
+test('高风险 owner 请求评论不会在 owner 已批准后留下永久阻塞', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    comments: [{
+      login: 'zqchris',
+      permission: 'admin',
+      body: '<!-- filoai-merge-steward:owner-review-request -->\n高风险改动需要 owner 确认',
+    }],
+  })
+  assert.equal(result.satisfied, true)
+})
+
 test('不同意合并不能因包含同意合并子串而解除阻止', () => {
   const result = evaluateManualBlockers({
     headOid,
@@ -210,4 +222,66 @@ test('COMMENTED review 总结里的非阻塞说明不会误判', () => {
       commit_id: headOid, submitted_at: '2026-08-24T00:00:00Z',
     }],
   }).satisfied, true)
+})
+
+test('正式 review 状态优先于同一 review 的总结措辞', () => {
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    reviews: [{
+      login: 'reviewer', permission: 'write', state: 'APPROVED', commit_id: headOid,
+      body: 'Earlier there was a do not merge concern.', submitted_at: '2026-08-24T00:00:00Z',
+    }],
+  }).satisfied, true)
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    reviews: [{
+      login: 'reviewer', permission: 'write', state: 'CHANGES_REQUESTED', commit_id: headOid,
+      body: `LGTM ${headOid.slice(0, 7)}`, submitted_at: '2026-08-24T00:00:00Z',
+    }],
+  }).satisfied, false)
+})
+
+test('dismissed review 和自动化账号不构成真人阻止', () => {
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    reviews: [
+      { login: 'reviewer', permission: 'write', state: 'DISMISSED', body: 'do not merge' },
+      { login: 'cursor', permission: 'write', state: 'CHANGES_REQUESTED', is_bot: true },
+    ],
+  }).satisfied, true)
+})
+
+test('编辑后的评论按 updated_at 排序', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    comments: [
+      { login: 'reviewer', permission: 'write', body: `LGTM ${headOid.slice(0, 7)}`, created_at: '2026-08-24T00:01:00Z' },
+      { login: 'reviewer', permission: 'write', body: 'do not merge', created_at: '2026-08-24T00:00:00Z', updated_at: '2026-08-24T00:02:00Z' },
+    ],
+  })
+  assert.equal(result.satisfied, false)
+})
+
+test('普通 blocker 字样不误判，逗号分隔的当前 head 放行可识别', () => {
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    comments: [{ login: 'reviewer', permission: 'write', body: 'The test blocker is fixed.' }],
+  }).satisfied, true)
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    comments: [
+      { login: 'reviewer', permission: 'write', body: 'do not merge', created_at: '2026-08-24T00:00:00Z' },
+      { login: 'reviewer', permission: 'write', body: `LGTM, ${headOid.slice(0, 7)}`, created_at: '2026-08-24T00:01:00Z' },
+    ],
+  }).satisfied, true)
+})
+
+test('同一段先说无 CI 阻断、随后明确不要合并时仍然阻塞', () => {
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    comments: [{
+      login: 'reviewer', permission: 'write',
+      body: 'No merge blockers from CI but do not merge until the migration is fixed.',
+    }],
+  }).satisfied, false)
 })

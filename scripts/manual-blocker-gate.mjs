@@ -5,8 +5,11 @@ const BLOCK_PATTERNS = [
   /(?:不同意|不确认|不允许|不批准|未批准)[^。！？!\n]{0,16}(?:合并|merge)/i,
   /(?:合并|merge)[^。！？!\n]{0,16}(?:阻断|阻塞|拦截|block)/i,
   /(?:功能|发布|合并)[^。！？!\n]{0,12}(?:阻断|阻塞)/i,
-  /\b(?:do\s+not|don't|cannot|can't|should\s+not|must\s+not)\s+merge\b|\bnot\s+ready\s+to\s+merge\b|\bnot\s+approved?\b|\b(?:merge\s+)?blocker\b/i,
+  /\b(?:do\s+not|don't|cannot|can't|should\s+not|must\s+not)\s+merge\b|\bnot\s+ready\s+to\s+merge\b|\bnot\s+approved?\b|\bmerge\s+blocker\b/i,
 ]
+
+const EXPLICIT_VETO_PATTERN =
+  /(?:当前|现在|暂时)?(?:不宜|不应|不能|不可|不要|先别|暂不|禁止)(?:(?!阻塞|阻断|卡住|拦截)[^。！？!\n]){0,24}(?:合并|merge)|\b(?:do\s+not|don't|cannot|can't|should\s+not|must\s+not)\s+merge\b|\bnot\s+ready\s+to\s+merge\b/i
 
 const APPROVAL_PATTERN =
   /(?:同意|确认|允许)(?:这个|该)?(?:\s*pr)?(?:可以)?(?:直接)?合并|可以(?:直接)?合并|没问题(?:了)?|(?:已经)?通过(?:了)?|\b(?:lgtm|approved?|ok(?:ay)?\s+to\s+merge|please\s+merge|merge\s+it|go\s+ahead|ship\s+it)\b/i
@@ -20,6 +23,10 @@ const NON_BLOCKING_PATTERN =
 const STEWARD_MARKERS = [
   'merge-steward-verdict:',
   'filoai-merge-steward:failure',
+  'filoai-merge-steward:status',
+  'filoai-merge-steward:reviewed',
+  'filoai-merge-steward:owner-approved',
+  'filoai-merge-steward:owner-review-request',
 ]
 
 function hasReviewPermission(permission) {
@@ -33,7 +40,7 @@ function referencesHead(text, headOid) {
 
 function clausesFrom(body) {
   return String(body || '')
-    .split(/[。！？!?；;，,\n]+|\.(?:\s+|$)/)
+    .split(/[。！？!?；;\n]+|\.(?:\s+|$)/)
     .map((part) => part.trim())
     .filter(Boolean)
 }
@@ -42,8 +49,9 @@ function recordTextSignals({ body, login, at, headOid, latestBlock, latestReleas
   if (STEWARD_MARKERS.some((marker) => String(body || '').includes(marker))) return
   for (const clause of clausesFrom(body)) {
     nextIndex()
-    if (!NON_BLOCKING_PATTERN.test(clause)
-      && BLOCK_PATTERNS.some((pattern) => pattern.test(clause))) {
+    if (EXPLICIT_VETO_PATTERN.test(clause)
+      || (!NON_BLOCKING_PATTERN.test(clause)
+        && BLOCK_PATTERNS.some((pattern) => pattern.test(clause)))) {
       latestBlock(login, at)
     }
     if (!UNCERTAIN_OR_PENDING.test(clause)
@@ -69,28 +77,31 @@ export function evaluateManualBlockers({ headOid, reviews = [], comments = [] })
 
   for (const review of reviews) {
     index++
-    if (!hasReviewPermission(review.permission)) continue
+    if (!hasReviewPermission(review.permission) || review.is_bot) continue
     const at = Date.parse(review.submitted_at || 0) || 0
     const state = String(review.state || '').toUpperCase()
+    if (state === 'DISMISSED') continue
     if (state === 'CHANGES_REQUESTED') record(latestBlock, review.login, at)
     if (state === 'APPROVED'
       && String(review.commit_id || '').toLowerCase() === String(headOid || '').toLowerCase()) {
       record(latestRelease, review.login, at)
     }
-    recordTextSignals({
-      body: review.body,
-      login: review.login,
-      at,
-      headOid,
-      latestBlock: (login, signalAt) => record(latestBlock, login, signalAt),
-      latestRelease: (login, signalAt) => record(latestRelease, login, signalAt),
-      nextIndex: () => { index++ },
-    })
+    if (state === 'COMMENTED') {
+      recordTextSignals({
+        body: review.body,
+        login: review.login,
+        at,
+        headOid,
+        latestBlock: (login, signalAt) => record(latestBlock, login, signalAt),
+        latestRelease: (login, signalAt) => record(latestRelease, login, signalAt),
+        nextIndex: () => { index++ },
+      })
+    }
   }
 
   for (const comment of comments) {
-    if (!hasReviewPermission(comment.permission)) continue
-    const at = Date.parse(comment.created_at || 0) || 0
+    if (!hasReviewPermission(comment.permission) || comment.is_bot) continue
+    const at = Date.parse(comment.updated_at || comment.created_at || 0) || 0
     recordTextSignals({
       body: comment.body,
       login: comment.login,

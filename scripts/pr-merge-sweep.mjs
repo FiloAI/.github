@@ -24,6 +24,13 @@
 
 import { execFileSync } from 'node:child_process'
 import { flattenPaginatedPages } from './github-pagination.mjs'
+import { classifyHighRisk, evaluateHighRiskApproval } from './high-risk-review-gate.mjs'
+import {
+  buildFormalReviewerRequestArgs,
+  buildOwnerReviewCommentArgs,
+  buildOwnerReviewRequest,
+  OWNER_REVIEW_REQUEST_MARKER,
+} from './high-risk-review-request.mjs'
 import { evaluateManualBlockers } from './manual-blocker-gate.mjs'
 import { evaluateMergeLabels } from './merge-label-policy.mjs'
 import {
@@ -32,12 +39,18 @@ import {
   mergeFailureMarker,
 } from './merge-failure-comment.mjs'
 import {
+  buildMergeStatusComment,
+  buildMergeStatusCommentArgs,
+  MERGE_STATUS_MARKER,
+} from './merge-status-comment.mjs'
+import {
   buildMergeArgs,
   classifyMergeOutcome,
   matchesExpectedHead,
   shouldRequireUpToDate,
 } from './merge-execution-policy.mjs'
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
+import { evaluateReviewEvidence } from './review-evidence-gate.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
 const repoArgIdx = process.argv.indexOf('--repo')
@@ -46,6 +59,7 @@ const prArgIdx = process.argv.indexOf('--pr')
 const ONLY_PR = prArgIdx > -1 ? Number(process.argv[prArgIdx + 1]) : null
 const expectedHeadIdx = process.argv.indexOf('--expected-head')
 const EXPECTED_HEAD = expectedHeadIdx > -1 ? process.argv[expectedHeadIdx + 1] : null
+const PUBLISH_STATUS = process.argv.includes('--publish-status')
 if (ONLY_PR !== null && (!Number.isInteger(ONLY_PR) || !ONLY_REPO)) {
   console.error('--pr 需要一个整数且必须与 --repo 同用')
   process.exit(1)
@@ -74,6 +88,7 @@ const REPO_BASES = {
   'FiloAI/filo-issue-bot': ['main'], // 反馈分诊 bot
 }
 const REPOS = Object.keys(REPO_BASES)
+const TRUSTED_STEWARD_LOGINS = ['zqchris', 'jerboy']
 
 function gh(args, opts = {}) {
   return execFileSync('gh', args, { encoding: 'utf8', ...opts })
@@ -99,6 +114,52 @@ function replyMergeFailure(repo, pr, error, { outcomeUnverified = false } = {}) 
     console.log(`[${repo}#${pr.number}] MERGE FAILURE COMMENT LOOKUP FAILED: ${String(lookupError.message).slice(0, 160)}`)
   }
   gh(buildMergeFailureCommentArgs({ repo, number: pr.number, body, commentId }))
+}
+
+function replyMergeStatus(repo, pr, reason, { state = 'blocked' } = {}) {
+  const body = buildMergeStatusComment({ headOid: pr.headRefOid, reason, state })
+  const comments = ghJsonPaginated([
+    'api', `repos/${repo}/issues/${pr.number}/comments`,
+  ])
+  const existing = comments.findLast((comment) => String(comment.body || '').includes(MERGE_STATUS_MARKER))
+  if (existing && String(existing.body || '') === body) return false
+  gh(buildMergeStatusCommentArgs({
+    repo,
+    number: pr.number,
+    body,
+    commentId: existing?.id ?? null,
+  }))
+  return true
+}
+
+function requestHighRiskReview(repo, pr, reason) {
+  const body = buildOwnerReviewRequest({ headOid: pr.headRefOid, reason })
+  const comments = ghJsonPaginated([
+    'api', `repos/${repo}/issues/${pr.number}/comments`,
+  ])
+  const existing = comments.findLast((comment) => String(comment.body || '').includes(OWNER_REVIEW_REQUEST_MARKER))
+  if (!existing || String(existing.body || '') !== body) {
+    gh(buildOwnerReviewCommentArgs({
+      repo,
+      number: pr.number,
+      body,
+      commentId: existing?.id ?? null,
+    }))
+  }
+
+  const reviewerArgs = buildFormalReviewerRequestArgs({
+    repo,
+    number: pr.number,
+    authorLogin: pr.author?.login || '',
+  })
+  if (reviewerArgs) {
+    try {
+      gh(reviewerArgs, { stdio: ['ignore', 'pipe', 'pipe'] })
+    } catch (error) {
+      const detail = String(error?.stderr || error?.message || error || '')
+      console.log(`[${repo}#${pr.number}] FORMAL OWNER REQUEST FAILED; PR MENTION KEPT: ${detail.slice(0, 160)}`)
+    }
+  }
 }
 
 const permissionCache = new Map()
@@ -129,6 +190,7 @@ function manualBlockerGate(repo, pr) {
       'api', `repos/${repo}/pulls/${pr.number}/reviews`,
     ]).map((review) => ({
       login: review.user?.login || '',
+      is_bot: review.user?.type === 'Bot' || /(?:\[bot\]$|^cursor$|^chatgpt-codex-connector$|^greptile)/i.test(review.user?.login || ''),
       permission: collaboratorPermission(repo, review.user?.login || ''),
       state: review.state || '',
       body: review.body || '',
@@ -139,15 +201,90 @@ function manualBlockerGate(repo, pr) {
       'api', `repos/${repo}/issues/${pr.number}/comments`,
     ]).map((comment) => ({
       login: comment.user?.login || '',
+      is_bot: comment.user?.type === 'Bot' || /(?:\[bot\]$|^cursor$|^chatgpt-codex-connector$|^greptile)/i.test(comment.user?.login || ''),
       permission: collaboratorPermission(repo, comment.user?.login || ''),
       body: comment.body || '',
       created_at: comment.created_at,
+      updated_at: comment.updated_at,
     }))
     return evaluateManualBlockers({ headOid: pr.headRefOid, reviews, comments })
   } catch (error) {
     return {
       satisfied: false,
       reason: `成员明确阻止检查失败（fail-closed）：${String(error.message || error).slice(0, 160)}`,
+    }
+  }
+}
+
+function changedFiles(repo, prNumber) {
+  return ghJsonPaginated([
+    'api', `repos/${repo}/pulls/${prNumber}/files`,
+  ]).flatMap((file) => [file.filename, file.previous_filename]).filter(Boolean)
+}
+
+function highRiskGate(repo, pr) {
+  try {
+    const files = changedFiles(repo, pr.number)
+    const risk = classifyHighRisk({ repo, labels: pr.labels, files })
+    if (!risk.highRisk) return { satisfied: true, reason: null, evidence: null }
+    const reviews = ghJsonPaginated([
+      'api', `repos/${repo}/pulls/${pr.number}/reviews`,
+    ]).map((review) => ({
+      login: review.user?.login || '',
+      state: review.state || '',
+      commit_id: review.commit_id || '',
+    }))
+    const comments = ghJsonPaginated([
+      'api', `repos/${repo}/issues/${pr.number}/comments`,
+    ]).map((comment) => ({
+      login: comment.user?.login || '',
+      body: comment.body || '',
+    }))
+    return evaluateHighRiskApproval({
+      headOid: pr.headRefOid,
+      authorLogin: pr.author?.login || '',
+      highRisk: true,
+      riskReason: risk.reason,
+      reviews,
+      comments,
+    })
+  } catch (error) {
+    return {
+      satisfied: false,
+      reason: `高风险确认检查失败（fail-closed）：${String(error.message || error).slice(0, 160)}`,
+      evidence: null,
+    }
+  }
+}
+
+function reviewEvidenceGate(repo, pr) {
+  try {
+    const reviews = ghJsonPaginated([
+      'api', `repos/${repo}/pulls/${pr.number}/reviews`,
+    ]).map((review) => ({
+      login: review.user?.login || '',
+      state: review.state || '',
+      body: review.body || '',
+      commit_id: review.commit_id || '',
+    }))
+    const comments = ghJsonPaginated([
+      'api', `repos/${repo}/issues/${pr.number}/comments`,
+    ]).map((comment) => ({
+      login: comment.user?.login || '',
+      body: comment.body || '',
+    }))
+    return evaluateReviewEvidence({
+      headOid: pr.headRefOid,
+      authorLogin: pr.author?.login || '',
+      reviews,
+      comments,
+      trustedStewardLogins: TRUSTED_STEWARD_LOGINS,
+    })
+  } catch (error) {
+    return {
+      satisfied: false,
+      reason: `当前 head 审核凭证检查失败（fail-closed）：${String(error.message || error).slice(0, 160)}`,
+      evidence: null,
     }
   }
 }
@@ -276,7 +413,19 @@ function evaluateCandidate(repo, pr) {
   }
   const blockerGate = manualBlockerGate(repo, pr)
   if (!blockerGate.satisfied) return blockerGate
-  return { satisfied: true, requiredGate, isBot }
+  const ownerGate = highRiskGate(repo, pr)
+  if (!ownerGate.satisfied) return ownerGate
+  const reviewGate = reviewEvidenceGate(repo, pr)
+  if (!reviewGate.satisfied) {
+    return { ...reviewGate, readyForReview: true, requiredGate, isBot }
+  }
+  return {
+    satisfied: true,
+    requiredGate,
+    isBot,
+    reviewEvidence: reviewGate.evidence,
+    ownerEvidence: ownerGate.evidence,
+  }
 }
 
 let totalMerged = 0
@@ -307,6 +456,14 @@ for (const repo of REPOS) {
     const skip = (why) => {
       totalSkipped++
       console.log(`${tag} SKIP: ${why} — ${pr.title || listedPr.title}`)
+      if (PUBLISH_STATUS) {
+        try {
+          const changed = replyMergeStatus(repo, pr, why)
+          console.log(`${tag} STATUS ${changed ? 'PUBLISHED' : 'UNCHANGED'}`)
+        } catch (commentError) {
+          console.log(`${tag} STATUS PUBLISH FAILED: ${String(commentError.message || commentError).slice(0, 200)}`)
+        }
+      }
     }
     let failurePr = pr
     let mergeCommandReturned = false
@@ -322,11 +479,35 @@ for (const repo of REPOS) {
       continue
     }
     const candidate = evaluateCandidate(repo, pr)
-    if (!candidate.satisfied) { skip(candidate.reason); continue }
+    if (!candidate.satisfied) {
+      if (candidate.needsOwnerReview && PUBLISH_STATUS) {
+        try {
+          requestHighRiskReview(repo, pr, candidate.reason)
+          console.log(`${tag} OWNER REVIEW REQUESTED`)
+        } catch (requestError) {
+          console.log(`${tag} OWNER REVIEW REQUEST FAILED: ${String(requestError.message || requestError).slice(0, 200)}`)
+        }
+      }
+      if (candidate.readyForReview && DRY_RUN) {
+        totalSkipped++
+        console.log(`${tag} READY FOR REVIEW head=${pr.headRefOid} — ${pr.title}`)
+        if (PUBLISH_STATUS) {
+          try {
+            const changed = replyMergeStatus(repo, pr, candidate.reason, { state: 'ready' })
+            console.log(`${tag} STATUS ${changed ? 'PUBLISHED' : 'UNCHANGED'}`)
+          } catch (commentError) {
+            console.log(`${tag} STATUS PUBLISH FAILED: ${String(commentError.message || commentError).slice(0, 200)}`)
+          }
+        }
+        continue
+      }
+      skip(candidate.reason)
+      continue
+    }
     const { isBot } = candidate
     const method = isBot ? '--squash' : '--merge'
     if (DRY_RUN) {
-      console.log(`${tag} WOULD MERGE (${method}) head=${pr.headRefOid} — ${pr.title}`)
+      console.log(`${tag} WOULD MERGE (${method}) head=${pr.headRefOid} review=${candidate.reviewEvidence} — ${pr.title}`)
       continue
     }
     try {

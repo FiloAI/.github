@@ -12,21 +12,25 @@
 // 2026-08-05 起的混合模式分工：定时任务先跑 --dry-run 拿到过全部硬门禁的候选，
 // 由本机 AI 终审 agent 逐个读 diff 判「是什么/有无危害/与描述相符」，判过的才用
 // --repo X --pr N 定点合并（本脚本是唯一合并执行通道，合并方式仍由脚本判定）。
-// 裸跑（无 --pr）仍是全量模式，仅供人工兜底，常规链路不再直接用。
+// 实合并永久禁止裸跑；只有 dry-run 可以不带 --pr 扫描候选。
 //
 // 每个候选 PR 的门禁（全部满足才合并）：
 //   1. 非 draft、base 在允许列表、无 no-automerge、mergeable=MERGEABLE
 //   2. 当前 base ruleset 声明的全部 required status checks = success（没有则不虚构）
-//   3. 人类作者 PR 有绑定当前 head 的 Codex 结论
-//   4. 0 个未解决 review thread
-//   5. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
-// Greptile、Confidence、改动规模、作者身份分级与产品/视觉分类均不是合并门禁。
+//   3. 0 个未解决 review thread
+//   4. 若存在 needs-human-review：作者有 write+ 权限，或当前 head 已获有权限者批准/确认
+// 外部 reviewer 的到场、缺席或拒审不是脚本门禁；定时任务必须在调用定点合并前完成当前
+// head 的完整代审，并把发现的问题写成 inline review thread。
 // 合并方式：bot 作者 squash，人类作者 merge commit（与 frontend 既有约定一致）。
 
 import { execFileSync } from 'node:child_process'
-import { hasCurrentHeadCodexReview } from './codex-review-gate.mjs'
 import { evaluateHumanReviewGate } from './human-review-gate.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
+import {
+  buildMergeFailureComment,
+  buildMergeFailureCommentArgs,
+  mergeFailureMarker,
+} from './merge-failure-comment.mjs'
 import {
   buildMergeArgs,
   classifyMergeOutcome,
@@ -54,6 +58,10 @@ if (!DRY_RUN && ONLY_PR !== null && !EXPECTED_HEAD) {
   console.error('定点实合并必须传 --expected-head <本机 AI 已审过的 40 位 SHA>')
   process.exit(1)
 }
+if (!DRY_RUN && ONLY_PR === null) {
+  console.error('实合并必须使用 --repo <repo> --pr <number> --expected-head <40位SHA> 定点执行')
+  process.exit(1)
+}
 
 // 仓库 → 允许 sweep 合并的 base 分支。
 // 2026-08-05 晚起全组织 main-only：main 是唯一长期分支，正式版打 tag 发布
@@ -76,6 +84,21 @@ function ghJson(args) {
 
 function ghJsonPaginated(args) {
   return flattenPaginatedPages(ghJson([...args, '--paginate', '--slurp']))
+}
+
+function replyMergeFailure(repo, pr, error, { outcomeUnverified = false } = {}) {
+  const marker = mergeFailureMarker(pr.headRefOid)
+  const body = buildMergeFailureComment({ headOid: pr.headRefOid, error, outcomeUnverified })
+  let commentId = null
+  try {
+    const comments = ghJsonPaginated([
+      'api', `repos/${repo}/issues/${pr.number}/comments`,
+    ])
+    commentId = comments.findLast((comment) => String(comment.body || '').includes(marker))?.id ?? null
+  } catch (lookupError) {
+    console.log(`[${repo}#${pr.number}] MERGE FAILURE COMMENT LOOKUP FAILED: ${String(lookupError.message).slice(0, 160)}`)
+  }
+  gh(buildMergeFailureCommentArgs({ repo, number: pr.number, body, commentId }))
 }
 
 const permissionCache = new Map()
@@ -166,20 +189,6 @@ function humanReviewGate(repo, pr) {
     headCommittedAt,
     reviews: normalizedReviews,
     comments,
-  })
-}
-
-function hasCodexReview(repo, prNumber, headOid) {
-  const reviews = ghJsonPaginated([
-    'api', `repos/${repo}/pulls/${prNumber}/reviews`,
-  ])
-  const comments = ghJsonPaginated([
-    'api', `repos/${repo}/issues/${prNumber}/comments`,
-  ])
-  return hasCurrentHeadCodexReview({
-    reviews,
-    comments,
-    headOid,
   })
 }
 
@@ -302,9 +311,6 @@ function evaluateCandidate(repo, pr) {
   const requiredGate = requiredChecksGate(repo, pr)
   if (!requiredGate.satisfied) return { satisfied: false, reason: requiredGate.reason }
   const isBot = pr.author?.is_bot || /\[bot\]$/.test(pr.author?.login ?? '')
-  if (!isBot && !hasCodexReview(repo, pr.number, pr.headRefOid)) {
-    return { satisfied: false, reason: '当前 head 缺 Codex 结论' }
-  }
   const unresolved = unresolvedThreads(repo, pr.number)
   if (unresolved > 0) {
     return { satisfied: false, reason: `${unresolved} 个未解决 review thread` }
@@ -343,6 +349,8 @@ for (const repo of REPOS) {
       totalSkipped++
       console.log(`${tag} SKIP: ${why} — ${pr.title || listedPr.title}`)
     }
+    let failurePr = pr
+    let mergeCommandReturned = false
     try {
       pr = refreshMergeability(repo, listedPr)
     } catch (error) {
@@ -368,6 +376,7 @@ for (const repo of REPOS) {
       // 实合并前重新读取 PR 元数据与全部门禁，避免 head 不变但 base、标签、draft、
       // mergeability、rules/checks、review/thread 状态变化后仍使用旧快照合并。
       const livePr = refreshMergeability(repo, readPr(repo, pr.number))
+      failurePr = livePr
       if (!matchesExpectedHead(pr.headRefOid, livePr.headRefOid)) {
         throw new Error(`合并前 head 已变化：expected=${pr.headRefOid} actual=${livePr.headRefOid}`)
       }
@@ -384,6 +393,7 @@ for (const repo of REPOS) {
         headOid: pr.headRefOid,
       })
       gh(mergeArgs)
+      mergeCommandReturned = true
       let mergedPr = readMergeOutcome(repo, pr.number)
       let outcome = classifyMergeOutcome(mergedPr)
       for (let retry = 0; outcome === 'pending' && retry < 2; retry++) {
@@ -407,7 +417,14 @@ for (const repo of REPOS) {
       console.log(`${tag} MERGED (${method}) commit=${mergedPr.mergeCommit?.oid || 'unknown'} — ${pr.title}`)
       totalMerged++
     } catch (e) {
-      console.log(`${tag} MERGE FAILED: ${String(e.message).slice(0, 200)}`)
+      const reason = String(e.message || e).slice(0, 200)
+      console.log(`${tag} MERGE FAILED: ${reason}`)
+      try {
+        replyMergeFailure(repo, failurePr, e, { outcomeUnverified: mergeCommandReturned })
+        console.log(`${tag} MERGE FAILURE REPLIED`)
+      } catch (commentError) {
+        console.log(`${tag} MERGE FAILURE REPLY FAILED: ${String(commentError.message || commentError).slice(0, 200)}`)
+      }
     }
   }
   if (prs.length === 0) console.log(`[${repo}] 无 open PR`)

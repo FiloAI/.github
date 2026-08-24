@@ -6,18 +6,19 @@
 
 ```bash
 node scripts/pr-merge-sweep.mjs --dry-run   # 只看决策不合并
-node scripts/pr-merge-sweep.mjs             # 实际合并（以执行者的 gh 登录态）
-node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend   # 只扫一个仓
+node scripts/pr-merge-sweep.mjs --dry-run --repo FiloAI/filoai-frontend   # 只扫一个仓
 node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 --expected-head <40位本机AI已审SHA> # 定点合并
 ```
 
-门禁（全过才合并）：非 draft + base 在仓库允许列表 + 无 `no-automerge` + `mergeable=MERGEABLE` + 当前 base ruleset 声明的全部 required checks 绿 + 人类 PR 有绑定当前 head 的 Codex 结论 + 0 未解决 review thread。没有 required checks 的仓库不虚构 `summary`；若 PR 带 `needs-human-review`，作者有 write 及以上权限时自动满足，否则接受当前 head 的正式 approve，或有权限者在当前 head 后给出的明确自然语言确认。
+门禁（全过才合并）：非 draft + base 在仓库允许列表 + 无 `no-automerge` + `mergeable=MERGEABLE` + 当前 base ruleset 声明的全部 required checks 绿 + 0 未解决 review thread。没有 required checks 的仓库不虚构 `summary`；若 PR 带 `needs-human-review`，作者有 write 及以上权限时自动满足，否则接受当前 head 的正式 approve，或有权限者在当前 head 后给出的明确自然语言确认。
 
-不属于门禁：Greptile/Confidence、PR 大小、commit 数、作者身份分级、feat/fix 类型、视觉或产品方向分类。它们可以作为信息，但不得让一个已满足上述硬门禁的 PR 等人。
+不属于脚本门禁：Greptile、GitHub Codex 或 Cursor Bugbot 的到场/缺席/拒审、Confidence、PR 大小、commit 数、作者身份分级、feat/fix 类型、视觉或产品方向分类。定时任务在调用定点合并前必须完整审查当前 head；外部 reviewer 已给出的可行动意见与管家自审发现都必须写成 inline review thread 并闭环。机器人不稳定时走管家代审，不能让已满足硬门禁的 PR 永久等待。
 
 列表接口暂时返回 `mergeable=UNKNOWN` 时会立即回读该 PR 的实时状态，不会把旧 PR 永久跳过；满足门禁的 PR 也不再受每仓固定合并配额限制。
 
 脚本不会自动 approve、不会写“终审意见”、不会创建“团队待办”，也不使用 `--admin` 绕过 GitHub 规则。定点实合并必须用 `--expected-head` 传入本机 AI 已审的完整 SHA，并继续用 `--match-head-commit` 绑定该 head；合并前会重读 PR 元数据与全部硬门禁，合并后回读 merged / queued / scheduled 实时状态。
+
+实合并永久禁止不带 `--pr` 的裸跑，避免跳过管家对具体 head 的完整审查。定点合并失败时，脚本会在对应 PR 回复 GitHub 返回的具体原因，并用本次实时观察到的 head 隐藏标记更新同一条评论，避免周期任务重复刷屏；合并命令已成功但最终状态暂时无法回读时，会明确写“结果待确认”，不会误报合并失败。评论本身发送失败只记日志，不覆盖原始错误。
 
 活体任务由 Cindy scheduler 管理；前置检查脚本必须通过 `schedule_set_pre_run_hook` 安装和自测，不直接写入 ignored 的 `scripts/schedule-checks/`。仓库里的本文件只记录脚本契约，不作为另一套流程规范。
 

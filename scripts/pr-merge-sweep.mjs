@@ -24,6 +24,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { flattenPaginatedPages } from './github-pagination.mjs'
+import { evaluateManualBlockers } from './manual-blocker-gate.mjs'
 import { evaluateMergeLabels } from './merge-label-policy.mjs'
 import {
   buildMergeFailureComment,
@@ -98,6 +99,56 @@ function replyMergeFailure(repo, pr, error, { outcomeUnverified = false } = {}) 
     console.log(`[${repo}#${pr.number}] MERGE FAILURE COMMENT LOOKUP FAILED: ${String(lookupError.message).slice(0, 160)}`)
   }
   gh(buildMergeFailureCommentArgs({ repo, number: pr.number, body, commentId }))
+}
+
+const permissionCache = new Map()
+
+function collaboratorPermission(repo, login) {
+  if (!login) return null
+  const key = `${repo}:${login}`
+  if (permissionCache.has(key)) return permissionCache.get(key)
+  try {
+    const permission = gh([
+      'api', `repos/${repo}/collaborators/${login}/permission`, '--jq', '.permission',
+    ], { stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+    permissionCache.set(key, permission)
+    return permission
+  } catch (error) {
+    const detail = String(error?.stderr || error?.message || error || '')
+    if (/HTTP 404|\bNot Found\b|is not a user/i.test(detail)) {
+      permissionCache.set(key, null)
+      return null
+    }
+    throw new Error(`无法确认 ${login} 在 ${repo} 的权限：${detail.slice(0, 160)}`)
+  }
+}
+
+function manualBlockerGate(repo, pr) {
+  try {
+    const reviews = ghJsonPaginated([
+      'api', `repos/${repo}/pulls/${pr.number}/reviews`,
+    ]).map((review) => ({
+      login: review.user?.login || '',
+      permission: collaboratorPermission(repo, review.user?.login || ''),
+      state: review.state || '',
+      commit_id: review.commit_id || '',
+      submitted_at: review.submitted_at,
+    }))
+    const comments = ghJsonPaginated([
+      'api', `repos/${repo}/issues/${pr.number}/comments`,
+    ]).map((comment) => ({
+      login: comment.user?.login || '',
+      permission: collaboratorPermission(repo, comment.user?.login || ''),
+      body: comment.body || '',
+      created_at: comment.created_at,
+    }))
+    return evaluateManualBlockers({ headOid: pr.headRefOid, reviews, comments })
+  } catch (error) {
+    return {
+      satisfied: false,
+      reason: `成员明确阻止检查失败（fail-closed）：${String(error.message || error).slice(0, 160)}`,
+    }
+  }
 }
 
 function unresolvedThreads(repo, prNumber) {
@@ -222,6 +273,8 @@ function evaluateCandidate(repo, pr) {
   if (unresolved > 0) {
     return { satisfied: false, reason: `${unresolved} 个未解决 review thread` }
   }
+  const blockerGate = manualBlockerGate(repo, pr)
+  if (!blockerGate.satisfied) return blockerGate
   return { satisfied: true, requiredGate, isBot }
 }
 

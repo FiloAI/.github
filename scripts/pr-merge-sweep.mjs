@@ -131,6 +131,7 @@ function manualBlockerGate(repo, pr) {
       login: review.user?.login || '',
       permission: collaboratorPermission(repo, review.user?.login || ''),
       state: review.state || '',
+      body: review.body || '',
       commit_id: review.commit_id || '',
       submitted_at: review.submitted_at,
     }))

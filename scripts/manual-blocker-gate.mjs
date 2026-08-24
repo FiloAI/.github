@@ -31,6 +31,29 @@ function referencesHead(text, headOid) {
   return shas.some((sha) => String(headOid || '').toLowerCase().startsWith(sha.toLowerCase()))
 }
 
+function clausesFrom(body) {
+  return String(body || '')
+    .split(/[。！？!?；;，,\n]+|\.(?:\s+|$)/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+function recordTextSignals({ body, login, at, headOid, latestBlock, latestRelease, nextIndex }) {
+  if (STEWARD_MARKERS.some((marker) => String(body || '').includes(marker))) return
+  for (const clause of clausesFrom(body)) {
+    nextIndex()
+    if (!NON_BLOCKING_PATTERN.test(clause)
+      && BLOCK_PATTERNS.some((pattern) => pattern.test(clause))) {
+      latestBlock(login, at)
+    }
+    if (!UNCERTAIN_OR_PENDING.test(clause)
+      && APPROVAL_PATTERN.test(clause)
+      && referencesHead(clause, headOid)) {
+      latestRelease(login, at)
+    }
+  }
+}
+
 export function evaluateManualBlockers({ headOid, reviews = [], comments = [] }) {
   const latestBlock = new Map()
   const latestRelease = new Map()
@@ -54,28 +77,29 @@ export function evaluateManualBlockers({ headOid, reviews = [], comments = [] })
       && String(review.commit_id || '').toLowerCase() === String(headOid || '').toLowerCase()) {
       record(latestRelease, review.login, at)
     }
+    recordTextSignals({
+      body: review.body,
+      login: review.login,
+      at,
+      headOid,
+      latestBlock: (login, signalAt) => record(latestBlock, login, signalAt),
+      latestRelease: (login, signalAt) => record(latestRelease, login, signalAt),
+      nextIndex: () => { index++ },
+    })
   }
 
   for (const comment of comments) {
     if (!hasReviewPermission(comment.permission)) continue
-    if (STEWARD_MARKERS.some((marker) => String(comment.body || '').includes(marker))) continue
     const at = Date.parse(comment.created_at || 0) || 0
-    const clauses = String(comment.body || '')
-      .split(/[。！？!?；;，,\n]+|\.(?:\s+|$)/)
-      .map((part) => part.trim())
-      .filter(Boolean)
-    for (const clause of clauses) {
-      index++
-      if (!NON_BLOCKING_PATTERN.test(clause)
-        && BLOCK_PATTERNS.some((pattern) => pattern.test(clause))) {
-        record(latestBlock, comment.login, at)
-      }
-      if (!UNCERTAIN_OR_PENDING.test(clause)
-        && APPROVAL_PATTERN.test(clause)
-        && referencesHead(clause, headOid)) {
-        record(latestRelease, comment.login, at)
-      }
-    }
+    recordTextSignals({
+      body: comment.body,
+      login: comment.login,
+      at,
+      headOid,
+      latestBlock: (login, signalAt) => record(latestBlock, login, signalAt),
+      latestRelease: (login, signalAt) => record(latestRelease, login, signalAt),
+      nextIndex: () => { index++ },
+    })
   }
 
   const blockers = [...latestBlock.entries()]

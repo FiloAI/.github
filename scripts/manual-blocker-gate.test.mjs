@@ -187,3 +187,27 @@ test('否认存在 merge blocker 的说明不是阻止', () => {
     }).satisfied, true, body)
   }
 })
+
+test('COMMENTED review 总结里的明确否决会阻塞', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    reviews: [{
+      login: 'reviewer', permission: 'write', state: 'COMMENTED',
+      body: 'Do not merge. The rollout contract is still broken.',
+      commit_id: headOid, submitted_at: '2026-08-24T00:00:00Z',
+    }],
+  })
+  assert.equal(result.satisfied, false)
+  assert.deepEqual(result.blockers, ['reviewer'])
+})
+
+test('COMMENTED review 总结里的非阻塞说明不会误判', () => {
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    reviews: [{
+      login: 'reviewer', permission: 'write', state: 'COMMENTED',
+      body: 'No merge blockers found.',
+      commit_id: headOid, submitted_at: '2026-08-24T00:00:00Z',
+    }],
+  }).satisfied, true)
+})

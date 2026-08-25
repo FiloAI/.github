@@ -161,6 +161,12 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     '我撤回同意。',
     "I don't accept this; it remains a blocker.",
     'I have not agreed to this deferral.',
+    "I haven't accepted this as a separate concern.",
+    "The reviewer hasn't agreed to this as a separate concern.",
+    "We hadn't accepted this as a separate concern.",
+    'I haven’t agreed to this deferral.',
+    'The reviewer hasn’t accepted this as a separate concern.',
+    'We hadn’t agreed to this deferral.',
     'I no longer agree.',
     'I withdraw my acceptance.',
     'Understood, but this still needs to be fixed before merge.',
@@ -1625,6 +1631,51 @@ test('deferral 编辑为 fixed 时单边或不完整历史仍保留 latestDeferr
   }
 })
 
+test('同秒单边或不完整编辑证据仍保留历史 deferral', () => {
+  for (const edit of [
+    { edits_complete: true, edits: [{ diff: '@@ -1 +1 @@\n+Fixed and covered by regression tests.' }] },
+    { edits_complete: true, edits: [{ diff: '+Fixed and covered by regression tests.' }] },
+    { edits_complete: true, edits: [{ diff: '' }] },
+    { edits_complete: false, edits: [{ diff: '@@ -1 +1 @@\n+Fixed and covered by regression tests.' }] },
+  ]) {
+    const candidate = thread({
+      authorReply: 'Fixed and covered by regression tests.',
+      reviewerReply: null,
+    })
+    candidate.comments[1] = {
+      ...candidate.comments[1],
+      updated_at: candidate.comments[1].created_at,
+      ...edit,
+    }
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, false, JSON.stringify(edit))
+
+    candidate.comments.push({
+      login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+      created_at: '2026-08-25T03:02:00Z',
+    })
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, true, JSON.stringify(edit))
+
+    candidate.comments.pop()
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+      comments: [{
+        login: 'jerboy', body: ownerApprovalMarker(head),
+        created_at: '2026-08-25T03:02:00Z',
+      }],
+    }).satisfied, true, JSON.stringify(edit))
+  }
+})
+
 test('作者编辑删除 deferral 措辞仍保留产品取舍门', () => {
   const candidate = thread({
     authorReply: 'Clarified the reply.',
@@ -2133,6 +2184,12 @@ test('not going to fix 或 address 是明确产品取舍延期', () => {
     'We do not plan to be addressing this.',
     'We have no plans to be resolving this.',
     'This will not be fixed in this PR.',
+    "We won't make this change.",
+    'We will not make the requested change.',
+    'WE WON’T MAKE THIS CHANGE.',
+    "We'll leave this as-is.",
+    'We’ll leave this as-is.',
+    'We will leave it as is.',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,
@@ -2147,6 +2204,16 @@ test('not going to fix 或 address 是明确产品取舍延期', () => {
         authorReply,
         reviewerReply: 'Accepted as a separate concern; non-blocking.',
       })],
+    }).satisfied, true, authorReply)
+
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({ authorReply })],
+      comments: [{
+        login: 'jerboy', body: ownerApprovalMarker(head),
+        created_at: '2026-08-25T03:02:00Z',
+      }],
     }).satisfied, true, authorReply)
   }
 })

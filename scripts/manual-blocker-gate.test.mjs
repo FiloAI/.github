@@ -339,6 +339,10 @@ test('条件性放行无论分句顺序都不能解除人工阻止', () => {
     `LGTM ${headOid.slice(0, 7)}. The migration must be fixed.`,
     `迁移修复后可以合并 ${headOid.slice(0, 7)}`,
     `等 Alice 签字后，可以合并 ${headOid.slice(0, 7)}`,
+    `如果 Alice 签字，可以合并 ${headOid.slice(0, 7)}`,
+    `若安全审查通过，可以合并 ${headOid.slice(0, 7)}`,
+    `可以合并 ${headOid.slice(0, 7)}，如果 Alice 签字`,
+    `可以合并 ${headOid.slice(0, 7)}，若安全审查通过`,
   ]) {
     const result = evaluateManualBlockers({
       headOid,
@@ -348,6 +352,82 @@ test('条件性放行无论分句顺序都不能解除人工阻止', () => {
       ],
     })
     assert.equal(result.satisfied, false, body)
+  }
+})
+
+test('跨 PR 前置条件不能解除当前 PR 的人工阻止', () => {
+  for (const body of [
+    `After PR #123 is fixed. LGTM ${headOid.slice(0, 7)}.`,
+    `LGTM ${headOid.slice(0, 7)}. After PR #123 is fixed.`,
+    `Once PR #123 is green. LGTM ${headOid.slice(0, 7)}.`,
+    `PR #123 must be fixed before merge. LGTM ${headOid.slice(0, 7)}.`,
+    `PR #123 must be fixed first. LGTM ${headOid.slice(0, 7)}.`,
+    `等 PR #123 修复后，可以合并 ${headOid.slice(0, 7)}。`,
+    `PR #123 修好才能合并。LGTM ${headOid.slice(0, 7)}。`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      prNumber: 22,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    })
+    assert.equal(result.satisfied, false, body)
+  }
+})
+
+test('放行前后的未完成状态分句继续保留人工阻止', () => {
+  for (const body of [
+    `LGTM ${headOid.slice(0, 7)}. The migration is still broken.`,
+    `The migration is still broken. LGTM ${headOid.slice(0, 7)}.`,
+    `LGTM ${headOid.slice(0, 7)}. The rollout is incomplete.`,
+    `The tests are still failing. LGTM ${headOid.slice(0, 7)}.`,
+    `可以合并 ${headOid.slice(0, 7)}。迁移仍未完成。`,
+    `迁移仍未完成。可以合并 ${headOid.slice(0, 7)}。`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    })
+    assert.equal(result.satisfied, false, body)
+  }
+})
+
+test('已经完成的历史状态说明不会误阻塞当前 head 放行', () => {
+  for (const body of [
+    `LGTM ${headOid.slice(0, 7)}. The migration was broken but is now fixed.`,
+    `The rollout was incomplete, but it is now complete. LGTM ${headOid.slice(0, 7)}.`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    })
+    assert.equal(result.satisfied, true, body)
   }
 })
 

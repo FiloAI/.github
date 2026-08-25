@@ -21,6 +21,18 @@ const APPROVAL_PATTERN =
 const APPROVAL_NEGATION_PATTERN =
   /(?:尚未|还没|没有|不能|无法|不会|不)(?:批准|确认)[^。！？!\n]{0,16}(?:合并|merge)?|\b(?:(?:i|we)\s+)?(?:(?:have|has|had)\s+not|haven['’]t|hasn['’]t|hadn['’]t)\s+approved?\b|\b(?:(?:i|we)\s+)?(?:cannot|can['’]t|could\s+not|couldn['’]t|will\s+not|won['’]t|do\s+not|don['’]t)\s+approve\b/i
 
+const FIRST_PERSON_APPROVAL_PATTERN =
+  /\b(?:i|we)\s+(?:(?:now|explicitly|personally|fully)\s+|(?:have|had)\s+)?approve(?:d)?\b|(?:我|我们)(?:已|已经|现已|明确|正式|现在)?(?:同意|确认|允许)[^。！？!?\n]{0,16}(?:合并|merge)/i
+
+const QUOTED_APPROVAL_PATTERN =
+  /[“"‘'][^”"’'\n]{0,120}(?:\blgtm\b|\bapproved?\b|(?:同意|确认|允许)[^”"’'\n]{0,16}(?:合并|merge))[^”"’'\n]{0,120}[”"’']/i
+
+const REPORTED_APPROVAL_PATTERN =
+  /\b(?:according\s+to|per)\b[^.。！？!?\n]{0,80}\b(?:lgtm|approved?)\b|\b(?:says?|said|reports?|reported|wrote|writes)\b[^.。！？!?\n]{0,80}\b(?:lgtm|approved?)\b|(?:据|按照|根据)[^。！？!?\n]{0,32}(?:说|表示|回复|评论)[^。！？!?\n]{0,48}(?:lgtm|approved?|同意|确认|允许)/i
+
+const THIRD_PARTY_APPROVAL_PATTERN =
+  /\b(?:@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,3})\s+(?:has\s+|had\s+)?approved?\b|(?:(?:他|她|他们|她们|对方|第三方)|[\p{L}\p{N}_@.-]{2,}(?:\s+[\p{L}\p{N}_@.-]{2,}){0,3})[^。！？!?\n]{0,20}(?:同意|确认|允许)[^。！？!?\n]{0,16}(?:合并|merge)/iu
+
 const CLAUSE_UNCERTAINTY =
   /[?？]|(?:吗|么|呢|吧)(?:$|[\s。！？!?，,；;])/i
 
@@ -40,7 +52,7 @@ const INDEPENDENT_FOLLOWUP_OFFER = [
 ]
 
 const NON_BLOCKING_PATTERN =
-  /(?:不能|不会|不应|不得)[^。！？!\n]{0,16}(?:阻塞|阻断|卡住|拦截)[^。！？!\n]{0,8}(?:合并|merge)|(?:不|未)(?:是|属于|构成|算作)[^。！？!\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b|\b(?:(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+)?(?:not|no\s+longer)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:stopped|ceased)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:do\s+not|don['’]t)\s+block\s+(?:this\s+|the\s+)?merge\b/i
+  /(?:不能|不会|不应(?:该)?|不得|不要)[^。！？!\n]{0,16}(?:阻塞|阻断|阻止|卡住|拦截)[^。！？!\n]{0,8}(?:合并|merge)|(?:不|未)(?:是|属于|构成|算作)[^。！？!\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b|\b(?:(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+)?(?:not|no\s+longer)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:stopped|ceased)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:do\s+not|don['’]t|should\s+not|shouldn['’]t|must\s+not|mustn['’]t)\s+block\s+(?:this\s+|the\s+)?merge\b/i
 
 const RESOLVED_BLOCKER_PATTERN =
   /\b(?:merge|release|functionality)\s+blocker\b[^.。！？!?\n]{0,32}\b(?:is|was|has\s+been|had\s+been)\s+(?:already\s+|now\s+)?(?:fixed|resolved|cleared|removed)\b|\b(?:fixed|resolved|cleared|removed)\b[^.。！？!?\n]{0,32}\b(?:the\s+)?(?:merge|release|functionality)\s+blocker\b|(?:合并|发布|功能)(?:阻断|阻塞)[^。！？!?\n]{0,24}(?:已|已经|现已)(?:修复|解决|解除|清除)|(?:已|已经|现已)(?:修复|解决|解除|清除)[^。！？!?\n]{0,24}(?:合并|发布|功能)(?:阻断|阻塞)/i
@@ -114,6 +126,13 @@ function isPendingReleaseCondition(text, prNumber) {
   return CROSS_PR_PREREQUISITE.test(value)
 }
 
+function isAttributedOrQuotedApproval(text) {
+  const value = String(text || '')
+  if (QUOTED_APPROVAL_PATTERN.test(value) || REPORTED_APPROVAL_PATTERN.test(value)) return true
+  if (FIRST_PERSON_APPROVAL_PATTERN.test(value)) return false
+  return THIRD_PARTY_APPROVAL_PATTERN.test(value)
+}
+
 function withoutNonBlockingSignals(text) {
   return [NON_BLOCKING_PATTERN, RESOLVED_BLOCKER_PATTERN].reduce((value, pattern) => {
     const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`
@@ -155,6 +174,7 @@ function classifyTextIntent(body, headOid, prNumber) {
       && !pendingCondition
       && !relatedCondition
       && APPROVAL_PATTERN.test(clause)
+      && !isAttributedOrQuotedApproval(clause)
       && referencesHead(clause, headOid)) {
       sawRelease = true
     }

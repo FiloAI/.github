@@ -100,6 +100,57 @@ test('其他人的批准不能覆盖原阻止者', () => {
   }).satisfied, false)
 })
 
+test('原阻止者转述或引用第三方批准不能解除自己的 veto', () => {
+  for (const body of [
+    `Alice approved ${headOid.slice(0, 7)}.`,
+    `The security team has approved ${headOid.slice(0, 7)}.`,
+    `Alice said LGTM ${headOid.slice(0, 7)}.`,
+    `I heard Alice approved ${headOid.slice(0, 7)}.`,
+    `According to Alice, approved ${headOid.slice(0, 7)}.`,
+    `Alice 表示确认可以合并 ${headOid.slice(0, 7)}。`,
+    `我听说 Alice 已确认可以合并 ${headOid.slice(0, 7)}。`,
+    `“LGTM ${headOid.slice(0, 7)}” — Alice`,
+    `'LGTM ${headOid.slice(0, 7)}' — Alice`,
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    }).satisfied, false, body)
+  }
+})
+
+test('原阻止者第一人称或直接批准当前 head 可以解除 veto', () => {
+  for (const body of [
+    `I approve ${headOid.slice(0, 7)}.`,
+    `We have approved ${headOid.slice(0, 7)}.`,
+    `Approved ${headOid.slice(0, 7)}.`,
+    `我确认可以合并 ${headOid.slice(0, 7)}。`,
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    }).satisfied, true, body)
+  }
+})
+
 test('同一阻止者引用当前 SHA 明确放行后解除', () => {
   assert.equal(evaluateManualBlockers({
     headOid,
@@ -239,6 +290,9 @@ test('否认存在 merge blocker 的说明不是阻止', () => {
     'We are no longer blocking the merge.',
     'We stopped blocking this merge.',
     "Don't block the merge.",
+    'We should not block the merge.',
+    "We shouldn't block this merge.",
+    '我们不应该阻止合并。',
   ]) {
     assert.equal(evaluateManualBlockers({
       headOid,
@@ -246,6 +300,52 @@ test('否认存在 merge blocker 的说明不是阻止', () => {
         login: 'reviewer', permission: 'write', body,
         created_at: '2026-08-24T00:00:00Z',
       }],
+    }).satisfied, true, body)
+  }
+})
+
+test('同消息的 current-head 放行与非阻止说明不会被误判为 veto', () => {
+  for (const body of [
+    `LGTM ${headOid.slice(0, 7)}. We should not block the merge.`,
+    `LGTM ${headOid.slice(0, 7)}。我们不应该阻止合并。`,
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    }).satisfied, true, body)
+  }
+})
+
+test('跨消息的非阻止说明不会在 current-head 放行后重新生成 veto', () => {
+  for (const body of [
+    'We should not block the merge.',
+    '我们不应该阻止合并。',
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body: `LGTM ${headOid.slice(0, 7)}.`,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:02:00Z',
+        },
+      ],
     }).satisfied, true, body)
   }
 })

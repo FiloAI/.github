@@ -14,7 +14,7 @@ test('高风险请求直接在 PR 点名 owner，并绑定当前 head', () => {
   const body = buildOwnerReviewRequest({ headOid: head, reason: 'path:auth/service.ts' })
   assert.ok(body.includes(OWNER_REVIEW_REQUEST_MARKER))
   assert.ok(body.includes(`owner-review-request-head=${head}`))
-  assert.match(body, /@zqchris @xd-bobo/)
+  assert.match(body, /@zqchris @jerboy/)
   assert.match(body, /48a99f1/)
   assert.match(body, /不按 PR 行数触发/)
 })
@@ -36,7 +36,7 @@ test('非 owner 作者正式 request Chris，Chris/Bobo 自己是作者时不额
     'api', 'repos/FiloAI/filoai-frontend/pulls/3557/requested_reviewers', '--method', 'POST',
     '-f', 'reviewers[]=zqchris',
   ])
-  for (const authorLogin of ['zqchris', 'xd-bobo']) {
+  for (const authorLogin of ['zqchris', 'jerboy']) {
     assert.equal(buildFormalReviewerRequestArgs({
       repo: 'FiloAI/filoai-frontend', number: 3557, authorLogin,
     }), null, authorLogin)

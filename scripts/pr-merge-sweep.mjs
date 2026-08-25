@@ -32,6 +32,11 @@ import {
   OWNER_REVIEW_REQUEST_MARKER,
 } from './high-risk-review-request.mjs'
 import { evaluateManualBlockers } from './manual-blocker-gate.mjs'
+import {
+  evaluateProductDecisionGate,
+  normalizeProductDecisionIssueComment,
+  normalizeProductDecisionThread,
+} from './product-decision-gate.mjs'
 import { evaluateMergeLabels } from './merge-label-policy.mjs'
 import {
   buildMergeFailureComment,
@@ -239,6 +244,8 @@ function highRiskGate(repo, pr) {
     ]).map((comment) => ({
       login: comment.user?.login || '',
       body: comment.body || '',
+      created_at: comment.created_at,
+      updated_at: comment.updated_at,
     }))
     return evaluateHighRiskApproval({
       headOid: pr.headRefOid,
@@ -296,12 +303,56 @@ function reviewEvidenceGate(repo, pr) {
   }
 }
 
-function unresolvedThreads(repo, prNumber) {
+function reviewThreadSnapshot(repo, prNumber) {
   const [owner, name] = repo.split('/')
-  const q = `query { repository(owner: "${owner}", name: "${name}") {
-    pullRequest(number: ${prNumber}) { reviewThreads(first: 100) { nodes { isResolved } } } } }`
-  const d = ghJson(['api', 'graphql', '-f', `query=${q}`])
-  return d.data.repository.pullRequest.reviewThreads.nodes.filter((t) => !t.isResolved).length
+  const q = `query($endCursor: String) { repository(owner: "${owner}", name: "${name}") {
+    pullRequest(number: ${prNumber}) { reviewThreads(first: 100, after: $endCursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        isResolved isOutdated resolvedBy { login }
+        comments(first: 100) {
+          pageInfo { hasNextPage }
+          nodes { body createdAt updatedAt author { login } }
+        }
+      }
+    } } } }`
+  const pages = ghJsonPaginated(['api', 'graphql', '-f', `query=${q}`])
+  const nodes = pages.flatMap((page) => (
+    page.data.repository.pullRequest.reviewThreads.nodes
+  ))
+  if (nodes.some((thread) => thread.comments.pageInfo.hasNextPage)) {
+    throw new Error('单个 review thread 的评论超过 100 条')
+  }
+  return nodes.map(normalizeProductDecisionThread)
+}
+
+function productDecisionGate(repo, pr, threads) {
+  try {
+    const reviews = ghJsonPaginated([
+      'api', `repos/${repo}/pulls/${pr.number}/reviews`,
+    ]).map((review) => ({
+      login: review.user?.login || '',
+      state: review.state || '',
+      commit_id: review.commit_id || '',
+      submitted_at: review.submitted_at,
+    }))
+    const comments = ghJsonPaginated([
+      'api', `repos/${repo}/issues/${pr.number}/comments`,
+    ]).map(normalizeProductDecisionIssueComment)
+    return evaluateProductDecisionGate({
+      headOid: pr.headRefOid,
+      authorLogin: pr.author?.login || '',
+      threads,
+      reviews,
+      comments,
+    })
+  } catch (error) {
+    return {
+      satisfied: false,
+      reason: `产品行为取舍检查失败（fail-closed）：${String(error.message || error).slice(0, 160)}`,
+      evidence: null,
+    }
+  }
 }
 
 function checkConclusions(repo, sha) {
@@ -414,12 +465,23 @@ function evaluateCandidate(repo, pr) {
   const requiredGate = requiredChecksGate(repo, pr)
   if (!requiredGate.satisfied) return { satisfied: false, reason: requiredGate.reason }
   const isBot = pr.author?.is_bot || /\[bot\]$/.test(pr.author?.login ?? '')
-  const unresolved = unresolvedThreads(repo, pr.number)
+  let threads
+  try {
+    threads = reviewThreadSnapshot(repo, pr.number)
+  } catch (error) {
+    return {
+      satisfied: false,
+      reason: `review thread 检查失败（fail-closed）：${String(error.message || error).slice(0, 160)}`,
+    }
+  }
+  const unresolved = threads.filter((thread) => !thread.is_resolved).length
   if (unresolved > 0) {
     return { satisfied: false, reason: `${unresolved} 个未解决 review thread` }
   }
   const blockerGate = manualBlockerGate(repo, pr)
   if (!blockerGate.satisfied) return blockerGate
+  const decisionGate = productDecisionGate(repo, pr, threads)
+  if (!decisionGate.satisfied) return decisionGate
   const ownerGate = highRiskGate(repo, pr)
   if (!ownerGate.satisfied) return ownerGate
   const reviewGate = reviewEvidenceGate(repo, pr)
@@ -431,6 +493,7 @@ function evaluateCandidate(repo, pr) {
     requiredGate,
     isBot,
     reviewEvidence: reviewGate.evidence,
+    decisionEvidence: decisionGate.evidence,
     ownerEvidence: ownerGate.evidence,
   }
 }

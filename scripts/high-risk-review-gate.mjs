@@ -1,4 +1,4 @@
-const OWNER_LOGINS = new Set(['zqchris', 'xd-bobo'])
+import { isMergeOwner } from './merge-owner-logins.mjs'
 
 const EXPLICIT_RISK_LABELS = new Set([
   'needs-owner-review',
@@ -21,7 +21,7 @@ const HIGH_RISK_PATHS = [
 ]
 
 const ORG_AUTOMATION_PATHS = [
-  /^scripts\/(?:pr-merge-sweep|merge-execution-policy|merge-label-policy|manual-blocker-gate|required-check-gate|high-risk-review-gate|high-risk-review-request|review-evidence-gate|merge-status-comment)/,
+  /^scripts\/(?:pr-merge-sweep|merge-execution-policy|merge-label-policy|manual-blocker-gate|required-check-gate|high-risk-review-gate|high-risk-review-request|product-decision-gate|merge-owner-logins|review-evidence-gate|merge-status-comment)/,
 ]
 
 export function ownerApprovalMarker(headOid) {
@@ -59,13 +59,13 @@ export function evaluateHighRiskApproval({
 }) {
   if (!highRisk) return { satisfied: true, reason: null, evidence: null }
   const author = String(authorLogin || '').toLowerCase()
-  if (OWNER_LOGINS.has(author)) {
+  if (isMergeOwner(author)) {
     return { satisfied: true, reason: null, evidence: `owner-author:${author}` }
   }
 
   const review = reviews.find((item) => {
     const login = String(item.login || '').toLowerCase()
-    return OWNER_LOGINS.has(login)
+    return isMergeOwner(login)
       && login !== author
       && String(item.state || '').toUpperCase() === 'APPROVED'
       && sameHead(item.commit_id, headOid)
@@ -76,7 +76,7 @@ export function evaluateHighRiskApproval({
 
   const comment = comments.find((item) => {
     const login = String(item.login || '').toLowerCase()
-    return OWNER_LOGINS.has(login) && hasOwnerMarker(item.body, headOid)
+    return isMergeOwner(login) && hasOwnerMarker(item.body, headOid)
   })
   if (comment) {
     return { satisfied: true, reason: null, evidence: `owner-marker:${comment.login}` }

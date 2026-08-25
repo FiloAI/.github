@@ -16,7 +16,7 @@ test('外部机器人风险评论不构成真人阻止', () => {
 })
 
 test('Chris 或 Bobo 的明确 veto 不受仓库 collaborator 权限字段影响', () => {
-  for (const login of ['zqchris', 'xd-bobo']) {
+  for (const login of ['zqchris', 'jerboy']) {
     const result = evaluateManualBlockers({
       headOid,
       comments: [{

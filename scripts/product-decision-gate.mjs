@@ -23,7 +23,7 @@ const REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN =
   /(?:接受|同意)[^。！？!?\n]{0,32}(?:延期|取舍|范围(?:说明)?|另开|后续处理|单独处理)|可以另开|单独处理|\b(?:accept(?:ed)?|agree(?:d)?)\b[^.。！？!?\n]{0,40}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr))\b|\bmakes?\s+sense\b[^.。！？!?\n]{0,40}\b(?:scope|separate|follow-?up)\b|\b(?:separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
 
 const REVIEWER_REJECTION_PATTERN =
-  /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|(?:不能|不可|不得)\s*单独处理|(?:必须|需要|应该|应当)\s*在本\s*PR\s*(?:修复|处理|解决)|合并前(?:仍需|请|必须)?[^。！？!?\n]{0,24}(?:修复|处理|解决)|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?separate\s+(?:concern|issue|pr)\b|\b(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+in\s+this\s+(?:pr|pull\s+request)\b|\b(?:please\s+)?(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+before\s+(?:merge|merging)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
+  /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|(?:不能|不可|不得)\s*单独处理|(?:不认为|不能认为|并非|不是)[^。！？!?\n]{0,24}(?:非阻塞|不阻塞)|(?:必须|需要|应该|应当)\s*在本\s*PR\s*(?:修复|处理|解决)|合并前(?:仍需|请|必须)?[^。！？!?\n]{0,24}(?:修复|处理|解决)|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:consider|regard|treat|view)\b[^.。！？!?\n]{0,48}\bnon-?blocking\b|\b(?:is|are)\s+not\s+non-?blocking\b|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?separate\s+(?:concern|issue|pr)\b|\b(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+in\s+this\s+(?:pr|pull\s+request)\b|\b(?:please\s+)?(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+before\s+(?:merge|merging)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
@@ -45,6 +45,66 @@ function commentTime(comment) {
 
 function dispositionTime(comment) {
   return eventTime(comment?.created_at)
+}
+
+function authorDispositionKind(body) {
+  if (isProductDeferral(body)) return 'deferral'
+  if (isFindingFixRetraction(body)) return 'fix-retracted'
+  if (isFindingFixedClaim(body)) return 'fixed'
+  return null
+}
+
+function compactEditText(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}\s]+/gu, '')
+}
+
+function editDistanceWithin(left, right, limit) {
+  if (Math.abs(left.length - right.length) > limit) return false
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex++) {
+    const current = [leftIndex]
+    let rowMinimum = current[0]
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex++) {
+      const substitution = previous[rightIndex - 1]
+        + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1)
+      current[rightIndex] = Math.min(
+        previous[rightIndex] + 1,
+        current[rightIndex - 1] + 1,
+        substitution,
+      )
+      rowMinimum = Math.min(rowMinimum, current[rightIndex])
+    }
+    if (rowMinimum > limit) return false
+    previous = current
+  }
+  return previous[right.length] <= limit
+}
+
+function isCosmeticEdit(left, right) {
+  const compactLeft = compactEditText(left)
+  const compactRight = compactEditText(right)
+  if (compactLeft === compactRight) return true
+  const limit = Math.min(6, Math.max(2, Math.floor(Math.max(compactLeft.length, compactRight.length) * 0.02)))
+  return editDistanceWithin(compactLeft, compactRight, limit)
+}
+
+function hasSemanticDispositionEdit(comment) {
+  const createdAt = dispositionTime(comment)
+  const updatedAt = commentTime(comment)
+  if (!updatedAt || updatedAt <= createdAt) return false
+  if (comment?.edits_complete === false) return true
+  const versions = (comment?.edits || [])
+    .map((edit) => String(edit?.body ?? edit?.diff ?? ''))
+    .filter(Boolean)
+  if (versions.length < 2) return true
+  return versions.some((body) => !isCosmeticEdit(body, comment.body))
+}
+
+function authorDispositionTime(comment) {
+  return hasSemanticDispositionEdit(comment) ? commentTime(comment) : dispositionTime(comment)
 }
 
 function isExplicitReviewerAcceptance(body) {
@@ -131,6 +191,11 @@ export function normalizeProductDecisionThread(thread) {
       created_at: comment.createdAt,
       updated_at: comment.updatedAt,
       review_id: comment.pullRequestReview?.databaseId || null,
+      edits: (comment.userContentEdits?.nodes || []).map((edit) => ({
+        edited_at: edit.editedAt,
+        body: edit.diff || '',
+      })),
+      edits_complete: comment.userContentEdits?.pageInfo?.hasNextPage !== true,
     })),
   }
 }
@@ -170,6 +235,7 @@ function latestReviewerDisposition({
   const originalBoundary = Math.max(evidenceCreatedAt, highFindingAt || 0)
   const effectiveBoundary = Math.max(evidenceAt || evidenceCreatedAt, highFindingAt || 0)
   const dispositions = []
+  const reviewOrderById = new Map(reviews.map((review, index) => [String(review.id || ''), index]))
 
   for (const [offset, comment] of thread.comments.slice(afterIndex + 1).entries()) {
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
@@ -179,6 +245,7 @@ function latestReviewerDisposition({
         dispositions.push({
           disposition: 'reject', at,
           source: 'thread',
+          reviewOrder: reviewOrderById.get(String(comment.review_id || '')),
           index: afterIndex + 1 + offset,
         })
       }
@@ -188,6 +255,7 @@ function latestReviewerDisposition({
         dispositions.push({
           disposition: 'accept', at,
           source: 'thread',
+          reviewOrder: reviewOrderById.get(String(comment.review_id || '')),
           index: afterIndex + 1 + offset,
         })
       }
@@ -205,7 +273,7 @@ function latestReviewerDisposition({
         source: 'review', reviewOrder: index,
         index,
       })
-    } else if (state === 'APPROVED' && at >= effectiveBoundary) {
+    } else if (state === 'APPROVED' && at > effectiveBoundary) {
       dispositions.push({
         disposition: 'accept', at,
         source: 'review', reviewOrder: index,
@@ -226,7 +294,7 @@ function ownerDecisionEvidence({ authorLogin, headOid, after, reviews, comments 
     isMergeOwner(item.login)
       && String(item.state || '').toUpperCase() === 'APPROVED'
       && sameHead(item.commit_id, headOid)
-      && eventTime(item.submitted_at) >= after
+      && eventTime(item.submitted_at) > after
   ))
   if (review) return `owner-review:${review.login}`
 
@@ -234,7 +302,7 @@ function ownerDecisionEvidence({ authorLogin, headOid, after, reviews, comments 
   const comment = comments.find((item) => (
     isMergeOwner(item.login)
       && String(item.body || '').toLowerCase().includes(marker)
-      && eventTime(item.updated_at || item.created_at) >= after
+      && eventTime(item.updated_at || item.created_at) > after
   ))
   return comment ? `owner-marker:${comment.login}` : null
 }
@@ -287,11 +355,9 @@ export function evaluateProductDecisionGate({
             || isFindingFixRetraction(comment.body))
       ))
       .map(({ comment, index }) => ({
-        kind: isProductDeferral(comment.body)
-          ? 'deferral'
-          : isFindingFixRetraction(comment.body) ? 'fix-retracted' : 'fixed',
+        kind: authorDispositionKind(comment.body),
         index,
-        at: commentTime(comment),
+        at: authorDispositionTime(comment),
       }))
       .sort((left, right) => left.at - right.at || left.index - right.index)
 

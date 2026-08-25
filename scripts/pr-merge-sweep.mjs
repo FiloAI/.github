@@ -315,6 +315,10 @@ function reviewThreadSnapshot(repo, prNumber) {
           nodes {
             body createdAt updatedAt author { login }
             pullRequestReview { databaseId }
+            userContentEdits(first: 25) {
+              pageInfo { hasNextPage }
+              nodes { editedAt diff }
+            }
           }
         }
       }

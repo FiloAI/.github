@@ -44,6 +44,8 @@ test('live GitHub 字段归一化保留 created/updated 时间', () => {
       login: 'author', body: 'out of scope',
       created_at: '2026-08-25T03:00:00Z', updated_at: '2026-08-25T03:02:00Z',
       review_id: 1234,
+      edits: [],
+      edits_complete: true,
     }],
   })
 })
@@ -157,6 +159,8 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     'Understood, but this still needs to be fixed before merge.',
     'This is not a separate concern; please address it in this PR.',
     '这个问题不能单独处理，必须在本 PR 修复。',
+    'I do not consider this non-blocking; please fix it before merge.',
+    '我不认为这是非阻塞问题，必须在本 PR 修复。',
   ]) {
     const result = evaluateProductDecisionGate({
       headOid: head,
@@ -617,7 +621,7 @@ test('同秒 APPROVED 与 thread rejection 以阻塞 disposition 为准', () => 
   }).satisfied, false)
 })
 
-test('同秒 CHANGES_REQUESTED 与 thread acceptance 无可靠跨来源顺序时保持阻塞', () => {
+test('同秒 CHANGES_REQUESTED 后关联到后续 review 的 thread acceptance 可以放行', () => {
   const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
   candidate.comments.push({
     login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
@@ -636,7 +640,7 @@ test('同秒 CHANGES_REQUESTED 与 thread acceptance 无可靠跨来源顺序时
       login: 'codex', state: 'COMMENTED', commit_id: head,
       submitted_at: '2026-08-25T03:02:00Z',
     }],
-  }).satisfied, false)
+  }).satisfied, true)
 })
 
 test('CHANGES_REQUESTED 后的 fresh thread acceptance 可以放行', () => {
@@ -760,6 +764,72 @@ test('编辑既有 deferral 使旧 acceptance 失效并要求 fresh acceptance',
     authorLogin: 'author',
     threads: [candidate],
   }).satisfied, false)
+})
+
+test('deferral 的错字或格式编辑不会清除已有 acceptance', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'Accepted as a separate concern; non-blocking.',
+  })
+  candidate.comments[1] = {
+    ...candidate.comments[1],
+    body: '**Out of scope** — defer to a follow-up PR.',
+    updated_at: '2026-08-25T03:03:00Z',
+    edits: [
+      { body: '**Out of scope** — defer to a follow-up PR.' },
+      { body: 'Out of scope; defer to a follow-up PR.' },
+    ],
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+
+  candidate.comments[1] = {
+    ...candidate.comments[1],
+    body: '**Out of scpoe** — defer to a follow-up PR.',
+    edits: [
+      { body: '**Out of scpoe** — defer to a follow-up PR.' },
+      { body: 'Out of scope; defer to a follow-up PR.' },
+    ],
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
+test('同秒且无法证明后置的 formal reviewer 或 owner approval 均保持 fail-closed', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  for (const approval of [
+    {
+      reviews: [{
+        login: 'codex', state: 'APPROVED', commit_id: head,
+        submitted_at: '2026-08-25T03:01:00Z',
+      }],
+    },
+    {
+      reviews: [{
+        login: 'zqchris', state: 'APPROVED', commit_id: head,
+        submitted_at: '2026-08-25T03:01:00Z',
+      }],
+    },
+    {
+      comments: [{
+        login: 'jerboy', body: ownerApprovalMarker(head),
+        created_at: '2026-08-25T03:01:00Z',
+      }],
+    },
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+      ...approval,
+    }).satisfied, false)
+  }
 })
 
 test('Greptile 已接受的 deferral 经语义编辑后必须重新确认', () => {

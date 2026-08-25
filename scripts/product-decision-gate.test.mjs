@@ -170,6 +170,10 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     '我不认为这是非阻塞问题，必须在本 PR 修复。',
     'I cannot confirm this is fixed.',
     'I have not verified this is resolved.',
+    'I have not withdrawn the objection.',
+    "I haven't withdrawn the blocker.",
+    'I did not retract the concern.',
+    'The objection has not been withdrawn.',
     '我无法确认已经修复。',
     '我尚未核实问题已解决。',
   ]) {
@@ -198,6 +202,45 @@ test('reviewer 只撤回阻止时仍可构成明确接受', () => {
         reviewerReply,
       })],
     }).satisfied, true, reviewerReply)
+  }
+})
+
+test('reviewer 否定撤回会覆盖较早 acceptance', () => {
+  for (const reviewerReply of [
+    'I have not withdrawn the objection.',
+    "I haven't withdrawn the blocker.",
+    'The objection has not been withdrawn.',
+  ]) {
+    const candidate = thread({
+      authorReply: '超出本 PR 范围，不改。',
+      reviewerReply: 'I withdraw the blocker; accepted as a separate concern.',
+    })
+    candidate.comments.push({
+      login: 'codex', body: reviewerReply,
+      created_at: '2026-08-25T03:03:00Z',
+    })
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, false, reviewerReply)
+  }
+})
+
+test('辅助产物无需改动不能覆盖明确的实现修复', () => {
+  for (const authorReply of [
+    'No changes are needed to the tests; fixed the implementation.',
+    'No change is needed for the documentation; addressed the issue.',
+  ]) {
+    const result = evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply,
+        reviewerReply: 'Confirmed fixed and resolved.',
+      })],
+    })
+    assert.equal(result.satisfied, true, authorReply)
   }
 })
 

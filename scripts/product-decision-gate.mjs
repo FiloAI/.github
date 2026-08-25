@@ -14,7 +14,13 @@ const NEGATED_PRODUCT_DEFERRAL_PATTERN =
   /(?:不是|并非|并不是)\s*(?:产品(?:决定|决策|取舍)|不改|不修|暂不处理|超出(?:本\s*PR\s*)?范围)|\b(?:is\s+not|isn't|was\s+not|wasn't|not)\s+(?:a\s+)?(?:product\s+(?:decision|trade-?off)|by\s+design|expected\s+behavio(?:u)?r|out\s+of\s+scope|defer(?:red)?)\b|\b(?:do\s+not|don't|should\s+not|shouldn't|cannot|can't|won't|not)\s+keep(?:\s+(?:this|it))?\s+as[-\s]+is\b/gi
 
 const INTENDED_BEHAVIOR_DEFERRAL_PATTERN =
-  /\b(?:working\s+as\s+intended|intended\s+behavio(?:u)?r|no\s+changes?\s+(?:are\s+)?needed)\b/i
+  /\b(?:working\s+as\s+intended|intended\s+behavio(?:u)?r)\b/i
+
+const NO_CHANGE_DEFERRAL_PATTERN =
+  /\bno\s+changes?\s+(?:are\s+)?needed\b/i
+
+const NON_BEHAVIOR_NO_CHANGE_PATTERN =
+  /\bno\s+changes?\s+(?:are\s+)?needed\s+(?:to|for|in)\s+(?:the\s+)?(?:tests?|test\s+suite|docs?|documentation|comments?|formatting|snapshots?|fixtures?|mocks?|tooling|ci)\b/i
 
 const NEGATED_INTENDED_BEHAVIOR_PATTERN =
   /\b(?:is\s+not|isn't|was\s+not|wasn't|not)\s+(?:working\s+as\s+intended|intended\s+behavio(?:u)?r)\b/gi
@@ -30,6 +36,9 @@ const REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN =
 
 const REVIEWER_REJECTION_PATTERN =
   /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|(?:不能|无法|不可|尚未|未能)\s*(?:确认|核实)[^。！？!?\n]{0,24}(?:已|已经)?(?:修复|处理|解决)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|(?:不能|不可|不得)\s*单独处理|(?:不认为|不能认为|并非|不是)[^。！？!?\n]{0,24}(?:非阻塞|不阻塞)|(?:必须|需要|应该|应当)\s*在本\s*PR\s*(?:修复|处理|解决)|合并前(?:仍需|请|必须)?[^。！？!?\n]{0,24}(?:修复|处理|解决)|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw|confirm|verify)\b|\b(?:have|has|had)\s+not\s+(?:confirmed|verified)\b|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:consider|regard|treat|view)\b[^.。！？!?\n]{0,48}\bnon-?blocking\b|\b(?:is|are)\s+not\s+non-?blocking\b|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?separate\s+(?:concern|issue|pr)\b|\b(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+in\s+this\s+(?:pr|pull\s+request)\b|\b(?:please\s+)?(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+before\s+(?:merge|merging)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
+
+const NEGATED_REVIEWER_WITHDRAWAL_PATTERN =
+  /\b(?:(?:have|has|had)\s+not|haven['’]t|hasn['’]t|hadn['’]t)\s+(?:withdrawn|retracted)\b[^.。！？!?\n]{0,40}\b(?:blocker|objection|concern|request\s+for\s+changes)\b|\b(?:(?:do|does|did)\s+not|don['’]t|doesn['’]t|didn['’]t)\s+(?:withdraw|retract)\b[^.。！？!?\n]{0,40}\b(?:blocker|objection|concern|request\s+for\s+changes)\b|\b(?:blocker|objection|concern|request\s+for\s+changes)\b[^.。！？!?\n]{0,40}\b(?:(?:has|had)\s+not|hasn['’]t|hadn['’]t)\s+been\s+(?:withdrawn|retracted)\b/i
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
@@ -143,7 +152,9 @@ function hasSemanticDispositionEdit(comment, dispositionKind) {
 
 function isExplicitReviewerAcceptance(body) {
   const value = String(body || '')
-  return REVIEWER_ACCEPTANCE_PATTERN.test(value) && !REVIEWER_REJECTION_PATTERN.test(value)
+  return REVIEWER_ACCEPTANCE_PATTERN.test(value)
+    && !REVIEWER_REJECTION_PATTERN.test(value)
+    && !NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(value)
 }
 
 function reviewerAcceptanceKind(body) {
@@ -155,7 +166,9 @@ function reviewerAcceptanceKind(body) {
 }
 
 function isExplicitReviewerRejection(body) {
-  return REVIEWER_REJECTION_PATTERN.test(String(body || ''))
+  const value = String(body || '')
+  return REVIEWER_REJECTION_PATTERN.test(value)
+    || NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(value)
 }
 
 function reviewerDispositionKind(body) {
@@ -236,6 +249,8 @@ function isProductDeferral(body) {
     .replace(NEGATED_INTENDED_BEHAVIOR_PATTERN, ' ')
   return PRODUCT_DEFERRAL_PATTERN.test(value)
     || INTENDED_BEHAVIOR_DEFERRAL_PATTERN.test(value)
+    || (NO_CHANGE_DEFERRAL_PATTERN.test(value)
+      && !NON_BEHAVIOR_NO_CHANGE_PATTERN.test(value))
 }
 
 function isFindingFixedClaim(body) {

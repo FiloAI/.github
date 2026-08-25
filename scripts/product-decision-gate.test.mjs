@@ -872,6 +872,38 @@ test('严重度变更使用目标值而不是 from 后的旧值', () => {
   }).satisfied, true)
 })
 
+test('should be 严重度变更使用目标级别而不是最后出现的否定级别', () => {
+  const escalated = thread({
+    severity: 'P2',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  escalated.comments.push({
+    login: 'codex', body: 'This should be P1, not P2.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  const escalatedResult = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [escalated],
+  })
+  assert.equal(escalatedResult.satisfied, false)
+  assert.equal(escalatedResult.blockers[0].severity, 'P1')
+
+  const downgraded = thread({
+    severity: 'P1',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  downgraded.comments.push({
+    login: 'codex', body: 'This should be P2, not P1.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [downgraded],
+  }).satisfied, true)
+})
+
 test('P2 deferral 的旧 acceptance 不能放行随后升级的 P1', () => {
   const candidate = thread({
     severity: 'P2',
@@ -2373,9 +2405,16 @@ test('not going to fix 或 address 是明确产品取舍延期', () => {
     'We do not plan to be addressing this.',
     'We have no plans to be resolving this.',
     'This will not be fixed in this PR.',
+    "We won't change this.",
+    'I will not change it.',
+    'WE WON’T CHANGE THIS.',
     "We won't make this change.",
     'We will not make the requested change.',
     'WE WON’T MAKE THIS CHANGE.',
+    'We are leaving this unchanged.',
+    "We're leaving this unchanged.",
+    'I am leaving it unchanged.',
+    "We'll leave this unchanged.",
     "We'll leave this as-is.",
     'We’ll leave this as-is.',
     'We will leave it as is.',
@@ -2412,6 +2451,9 @@ test('积极进行中的当前修复不是 no-fix disposition', () => {
     'We will be fixing this in this PR.',
     'We are addressing this now.',
     'We plan to be resolving this here.',
+    "We won't change this test; fixed the implementation.",
+    "We won't change this documentation; fixed the behavior.",
+    'We are leaving this fixture unchanged; fixed the implementation.',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,

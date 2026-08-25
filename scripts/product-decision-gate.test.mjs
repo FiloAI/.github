@@ -247,6 +247,50 @@ test('reviewer 否定撤回会覆盖较早 acceptance', () => {
   }
 })
 
+test('reviewer 未来时态明确不撤回 blocker 时继续阻塞', () => {
+  for (const reviewerReply of [
+    'I will not withdraw the blocker.',
+    "I won't withdraw the blocker.",
+    'I shall not retract the objection.',
+    'I will not be withdrawing the blocker.',
+    'I will never retract the objection.',
+    "I'm not withdrawing the blocker.",
+    "We're not retracting the objection.",
+    "They aren't retracting the concern.",
+    'I am not going to withdraw the blocker.',
+    'I am not planning to retract the concern.',
+    'I do not intend to withdraw the request for changes.',
+    "I don't plan to retract the concern.",
+    'I have no intention of withdrawing the blocker.',
+    'I have no plans to retract the concern.',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, false, reviewerReply)
+  }
+})
+
+test('reviewer 后续肯定撤回可覆盖较早的未来不撤回声明', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'I will not withdraw the blocker.',
+  })
+  candidate.comments.push({
+    login: 'codex', body: 'I have withdrawn the blocker; non-blocking.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
 test('辅助产物无需改动不能覆盖明确的实现修复', () => {
   for (const authorReply of [
     'No changes are needed to the tests; fixed the implementation.',

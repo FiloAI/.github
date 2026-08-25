@@ -484,6 +484,38 @@ test('P2 后的作者 deferral 在 finding 升级为 P1 后仍需授权', () => 
   assert.equal(result.blockers[0].severity, 'P1')
 })
 
+test('P3 严重度生命周期保留 deferral，最终只 gate P0/P1', () => {
+  const escalated = thread({
+    severity: 'P3',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  escalated.comments.push({
+    login: 'codex', body: 'Escalating this finding from P3 to P1.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  const escalatedResult = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [escalated],
+  })
+  assert.equal(escalatedResult.satisfied, false)
+  assert.equal(escalatedResult.blockers[0].severity, 'P1')
+
+  const downgraded = thread({
+    severity: 'P1',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  downgraded.comments.push({
+    login: 'codex', body: 'Downgrading this finding from P1 to P3.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [downgraded],
+  }).satisfied, true)
+})
+
 test('严重度变更使用目标值而不是 from 后的旧值', () => {
   const candidate = thread({
     severity: 'P2',
@@ -620,6 +652,50 @@ test('编辑后的 severity 按有效时间覆盖线程位置', () => {
     headOid: head,
     authorLogin: 'author',
     threads: [editedToP2],
+  }).satisfied, true)
+})
+
+test('severity 未变化的说明编辑不会重排严重度生命周期', () => {
+  const keepP1 = thread({
+    severity: 'P2',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  keepP1.comments[0] = {
+    ...keepP1.comments[0],
+    body: '![P2 Badge] P2 behavior regression with clarified context',
+    updated_at: '2026-08-25T03:04:00Z',
+    edits: [{ body: '![P2 Badge] P2 behavior regression' }],
+  }
+  keepP1.comments.splice(1, 0, {
+    login: 'codex', body: 'Escalating this finding from P2 to P1.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  keepP1.comments[2].created_at = '2026-08-25T03:03:00Z'
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [keepP1],
+  }).satisfied, false)
+
+  const keepP3 = thread({
+    severity: 'P1',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  keepP3.comments[0] = {
+    ...keepP3.comments[0],
+    body: '![P1 Badge] P1 behavior regression with clarified context',
+    updated_at: '2026-08-25T03:04:00Z',
+    edits: [{ body: '![P1 Badge] P1 behavior regression' }],
+  }
+  keepP3.comments.splice(1, 0, {
+    login: 'codex', body: 'Downgrading this finding from P1 to P3.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  keepP3.comments[2].created_at = '2026-08-25T03:03:00Z'
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [keepP3],
   }).satisfied, true)
 })
 
@@ -1064,6 +1140,61 @@ test('作者语义编辑后的同秒 thread acceptance 无法证明后置时保�
     headOid: head,
     authorLogin: 'author',
     threads: [candidate],
+  }).satisfied, true)
+})
+
+test('同秒 author disposition 含语义编辑时保守保留 deferral', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  candidate.comments[1] = {
+    ...candidate.comments[1],
+    created_at: '2026-08-25T03:00:30Z',
+    updated_at: '2026-08-25T03:03:00Z',
+    edits: [{ body: 'Fixed and covered by regression tests.' }],
+  }
+  candidate.comments.push(
+    {
+      login: 'author', body: 'Fixed and covered by regression tests.',
+      created_at: '2026-08-25T03:03:00Z',
+    },
+    {
+      login: 'codex', body: 'Confirmed fixed and resolved.',
+      created_at: '2026-08-25T03:04:00Z',
+    },
+  )
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:05:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+
+  const ordered = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  ordered.comments[1].created_at = '2026-08-25T03:03:00Z'
+  ordered.comments.push(
+    {
+      login: 'author', body: 'Fixed and covered by regression tests.',
+      created_at: '2026-08-25T03:03:00Z',
+    },
+    {
+      login: 'codex', body: 'Confirmed fixed and resolved.',
+      created_at: '2026-08-25T03:04:00Z',
+    },
+  )
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [ordered],
   }).satisfied, true)
 })
 

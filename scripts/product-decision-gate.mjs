@@ -2,7 +2,7 @@ import { ownerApprovalMarker } from './high-risk-review-gate.mjs'
 import { isMergeOwner } from './merge-owner-logins.mjs'
 
 const SEVERITY_PATTERN =
-  /(?:alt=["']?P([012])["']?|badge\/P([012])-|\bP([012])\b)/i
+  /(?:alt=["']?P([0123])["']?|badge\/P([0123])-|\bP([0123])\b)/i
 
 const SEVERITY_CHANGE_PATTERN =
   /\b(?:downgrad(?:e|ed|ing)|upgrad(?:e|ed|ing)|escalat(?:e|ed|ing)|reclassif(?:y|ied|ying)|severity|priority|should\s+be)\b|(?:降级|升级|提高|降低|调整|改为|定为)/i
@@ -161,9 +161,23 @@ function severityDispositionKind(body) {
 }
 
 function severityDispositionTime(comment) {
-  return hasSemanticDispositionEdit(comment, severityDispositionKind)
-    ? commentTime(comment)
-    : dispositionTime(comment)
+  const createdAt = dispositionTime(comment)
+  const updatedAt = commentTime(comment)
+  if (!updatedAt || updatedAt <= createdAt) return createdAt
+
+  const currentSeverity = severityDispositionKind(comment.body)
+  const severityChanged = editTexts(comment).some((body) => {
+    const historicalSeverity = severityDispositionKind(body)
+    return historicalSeverity && historicalSeverity !== currentSeverity
+  })
+  if (severityChanged) return updatedAt
+
+  // If GitHub did not return a complete edit history, only move a high-risk
+  // severity forward. Moving a low-risk P2/P3 forward could hide a later P0/P1.
+  if (comment?.edits_complete === false || editTexts(comment).length === 0) {
+    return isHighSeverity(currentSeverity) ? updatedAt : createdAt
+  }
+  return createdAt
 }
 
 function authorDispositionEvents(comment, index) {
@@ -173,15 +187,25 @@ function authorDispositionEvents(comment, index) {
   const semanticEdit = hasSemanticDispositionEdit(comment, authorDispositionKind)
   const at = semanticEdit ? commentTime(comment) : dispositionTime(comment)
 
-  if (currentKind === 'deferral') return [{ kind: 'deferral', index, at, strictAfter: semanticEdit }]
+  if (currentKind === 'deferral') {
+    return [{ kind: 'deferral', index, at, strictAfter: semanticEdit, semanticEdit }]
+  }
   if (!historicalDeferral) {
-    return currentKind ? [{ kind: currentKind, index, at, strictAfter: semanticEdit }] : []
+    return currentKind
+      ? [{ kind: currentKind, index, at, strictAfter: semanticEdit, semanticEdit }]
+      : []
   }
 
   const deferralAt = currentKind ? dispositionTime(comment) : at
   return [
-    { kind: 'deferral', index, at: deferralAt, strictAfter: !currentKind && semanticEdit },
-    ...(currentKind ? [{ kind: currentKind, index, at, strictAfter: semanticEdit }] : []),
+    {
+      kind: 'deferral', index, at: deferralAt,
+      strictAfter: !currentKind && semanticEdit,
+      semanticEdit: !currentKind && semanticEdit,
+    },
+    ...(currentKind
+      ? [{ kind: currentKind, index, at, strictAfter: semanticEdit, semanticEdit }]
+      : []),
   ]
 }
 
@@ -208,7 +232,7 @@ function severityOf(body) {
 function destinationSeverityOf(body) {
   const value = String(body || '')
   const target = value.match(
-    /(?:\b(?:to|into|as)\s+P([012])\b|\bP[012]\s*(?:-|=)?\>\s*P([012])\b|(?:改为|调整为|定为|升级为|降级为|提高到|降低到|变为|至|到)\s*P([012])\b)/i,
+    /(?:\b(?:to|into|as)\s+P([0123])\b|\bP[0123]\s*(?:-|=)?\>\s*P([0123])\b|(?:改为|调整为|定为|升级为|降级为|提高到|降低到|变为|至|到)\s*P([0123])\b)/i,
   )
   const targetLevel = target?.slice(1).find(Boolean)
   if (targetLevel) return `P${targetLevel}`
@@ -288,6 +312,23 @@ function latestDisposition(dispositions) {
   return candidates.some((item) => item.disposition === 'reject') ? 'reject' : 'accept'
 }
 
+function latestAuthorDisposition(events) {
+  const latestAt = Math.max(...events.map((event) => event.at))
+  const candidates = events.filter((event) => event.at === latestAt)
+  if (candidates.length === 1) return candidates[0]
+
+  // GitHub timestamps have second-level precision. If any tied event is a
+  // semantic edit, array position cannot prove whether a fixed claim followed
+  // the edited deferral. Preserve the non-fix disposition fail-closed.
+  if (candidates.some((event) => event.semanticEdit)) {
+    const conservative = candidates.filter((event) => event.kind !== 'fixed')
+    if (conservative.length > 0) {
+      return conservative.sort((left, right) => left.index - right.index).at(-1)
+    }
+  }
+  return candidates.sort((left, right) => left.index - right.index).at(-1)
+}
+
 function latestReviewerDisposition({
   thread,
   reviewerLogin,
@@ -295,6 +336,7 @@ function latestReviewerDisposition({
   highFindingAt,
   evidenceAt,
   evidenceStrictAfter,
+  evidenceKind,
   reviews,
   headOid,
 }) {
@@ -320,7 +362,10 @@ function latestReviewerDisposition({
       }
     } else {
       const acceptanceKind = reviewerAcceptanceKind(comment.body)
-      if (acceptanceKind && (evidenceStrictAfter ? at > effectiveBoundary : at >= effectiveBoundary)) {
+      const acceptsCurrentEvidence = acceptanceKind
+        && !(acceptanceKind === 'fixed' && evidenceKind !== 'fixed')
+      if (acceptsCurrentEvidence
+        && (evidenceStrictAfter ? at > effectiveBoundary : at >= effectiveBoundary)) {
         dispositions.push({
           disposition: 'accept', at,
           source: 'thread',
@@ -411,7 +456,7 @@ export function evaluateProductDecisionGate({
     const latestFindingAt = Math.max(...findingEvents.map((event) => event.at))
     const latestFindingCandidates = findingEvents.filter((event) => event.at === latestFindingAt)
     const latestFinding = latestFindingCandidates.sort((left, right) => {
-      const severityRank = { P0: 0, P1: 1, P2: 2 }
+      const severityRank = { P0: 0, P1: 1, P2: 2, P3: 3 }
       return severityRank[left.severity] - severityRank[right.severity]
         || right.index - left.index
     })[0]
@@ -434,7 +479,7 @@ export function evaluateProductDecisionGate({
     const latestDeferral = authorEvents.filter((event) => event.kind === 'deferral').at(-1)
     if (!latestDeferral) continue
     const deferralIndex = latestDeferral.index
-    const evidenceEvent = authorEvents.at(-1)
+    const evidenceEvent = latestAuthorDisposition(authorEvents)
     const reviewerDisposition = latestReviewerDisposition({
       thread,
       reviewerLogin,
@@ -442,6 +487,7 @@ export function evaluateProductDecisionGate({
       highFindingAt,
       evidenceAt: evidenceEvent.at,
       evidenceStrictAfter: evidenceEvent.strictAfter,
+      evidenceKind: evidenceEvent.kind,
       reviews,
       headOid,
     })

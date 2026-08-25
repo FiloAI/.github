@@ -108,6 +108,7 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     'I withdraw my acceptance.',
     'Understood, but this still needs to be fixed before merge.',
     'This is not a separate concern; please address it in this PR.',
+    '这个问题不能单独处理，必须在本 PR 修复。',
   ]) {
     const result = evaluateProductDecisionGate({
       headOid: head,
@@ -568,7 +569,7 @@ test('同秒 APPROVED 与 thread rejection 以阻塞 disposition 为准', () => 
   }).satisfied, false)
 })
 
-test('同秒 CHANGES_REQUESTED 后的 thread acceptance 按跨来源事件顺序放行', () => {
+test('同秒 CHANGES_REQUESTED 与 thread acceptance 无可靠跨来源顺序时保持阻塞', () => {
   const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
   candidate.comments.push({
     login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
@@ -587,10 +588,32 @@ test('同秒 CHANGES_REQUESTED 后的 thread acceptance 按跨来源事件顺序
       login: 'codex', state: 'COMMENTED', commit_id: head,
       submitted_at: '2026-08-25T03:02:00Z',
     }],
+  }).satisfied, false)
+})
+
+test('CHANGES_REQUESTED 后的 fresh thread acceptance 可以放行', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:02:01Z', review_id: 102,
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    reviews: [{
+      id: 101,
+      login: 'codex', state: 'CHANGES_REQUESTED', commit_id: head,
+      submitted_at: '2026-08-25T03:02:00Z',
+    }, {
+      id: 102,
+      login: 'codex', state: 'COMMENTED', commit_id: head,
+      submitted_at: '2026-08-25T03:02:01Z',
+    }],
   }).satisfied, true)
 })
 
-test('同秒 thread acceptance 后的 CHANGES_REQUESTED 按 review 列表顺序保持阻塞', () => {
+test('同秒 thread acceptance 与 CHANGES_REQUESTED 无可靠跨来源顺序时保持阻塞', () => {
   const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
   candidate.comments.push({
     login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
@@ -658,7 +681,7 @@ test('同秒 thread comments 使用可靠顺序决定最终 disposition', () => 
   }).satisfied, false)
 })
 
-test('编辑既有 deferral 保留 reviewer acceptance，后续 rejection 仍可重新阻塞', () => {
+test('编辑既有 deferral 使旧 acceptance 失效并要求 fresh acceptance', () => {
   const candidate = thread({
     authorReply: 'Out of scope; defer to a follow-up PR.',
     reviewerReply: 'Accepted as a separate concern; non-blocking.',
@@ -668,17 +691,59 @@ test('编辑既有 deferral 保留 reviewer acceptance，后续 rejection 仍可
     headOid: head,
     authorLogin: 'author',
     threads: [candidate],
-  }).satisfied, true)
+  }).satisfied, false)
 
   candidate.comments.push({
-    login: 'codex', body: 'I retract that acceptance; this remains a blocker.',
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
     created_at: '2026-08-25T03:04:00Z',
   })
   assert.equal(evaluateProductDecisionGate({
     headOid: head,
     authorLogin: 'author',
     threads: [candidate],
+  }).satisfied, true)
+
+  candidate.comments.push({
+    login: 'codex', body: 'I retract that acceptance; this remains a blocker.',
+    created_at: '2026-08-25T03:05:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
   }).satisfied, false)
+})
+
+test('Greptile 已接受的 deferral 经语义编辑后必须重新确认', () => {
+  const candidate = thread({
+    reviewer: 'greptile-apps[bot]',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'Accepted as a separate concern; non-blocking.',
+  })
+  candidate.comments.push({
+    login: 'author', body: 'Fixed and covered by regression tests.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  candidate.comments[1] = {
+    ...candidate.comments[1],
+    body: 'This is a broader product trade-off; defer it to a follow-up PR.',
+    updated_at: '2026-08-25T03:04:00Z',
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'greptile-apps[bot]', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:05:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
 })
 
 test('作者把 fixed claim 编辑为 deferral 后不能复用旧修复确认', () => {

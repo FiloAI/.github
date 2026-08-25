@@ -23,7 +23,7 @@ const REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN =
   /(?:接受|同意)[^。！？!?\n]{0,32}(?:延期|取舍|范围(?:说明)?|另开|后续处理|单独处理)|可以另开|单独处理|\b(?:accept(?:ed)?|agree(?:d)?)\b[^.。！？!?\n]{0,40}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr))\b|\bmakes?\s+sense\b[^.。！？!?\n]{0,40}\b(?:scope|separate|follow-?up)\b|\b(?:separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
 
 const REVIEWER_REJECTION_PATTERN =
-  /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|合并前(?:仍需|请|必须)?[^。！？!?\n]{0,24}(?:修复|处理|解决)|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?separate\s+(?:concern|issue|pr)\b|\b(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+in\s+this\s+(?:pr|pull\s+request)\b|\b(?:please\s+)?(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+before\s+(?:merge|merging)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
+  /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|(?:不能|不可|不得)\s*单独处理|(?:必须|需要|应该|应当)\s*在本\s*PR\s*(?:修复|处理|解决)|合并前(?:仍需|请|必须)?[^。！？!?\n]{0,24}(?:修复|处理|解决)|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?separate\s+(?:concern|issue|pr)\b|\b(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+in\s+this\s+(?:pr|pull\s+request)\b|\b(?:please\s+)?(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+before\s+(?:merge|merging)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
@@ -162,7 +162,6 @@ function latestReviewerDisposition({
   reviewerLogin,
   afterIndex,
   highFindingAt,
-  evidenceKind,
   evidenceAt,
   reviews,
   headOid,
@@ -171,7 +170,6 @@ function latestReviewerDisposition({
   const originalBoundary = Math.max(evidenceCreatedAt, highFindingAt || 0)
   const effectiveBoundary = Math.max(evidenceAt || evidenceCreatedAt, highFindingAt || 0)
   const dispositions = []
-  const reviewOrderById = new Map(reviews.map((review, index) => [String(review.id || ''), index]))
 
   for (const [offset, comment] of thread.comments.slice(afterIndex + 1).entries()) {
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
@@ -180,19 +178,16 @@ function latestReviewerDisposition({
       if (at >= originalBoundary) {
         dispositions.push({
           disposition: 'reject', at,
-          source: 'thread', reviewOrder: reviewOrderById.get(String(comment.review_id || '')),
+          source: 'thread',
           index: afterIndex + 1 + offset,
         })
       }
     } else {
       const acceptanceKind = reviewerAcceptanceKind(comment.body)
-      const preservesDeferralAcceptance = evidenceKind === 'deferral'
-        && acceptanceKind === 'deferral'
-      const boundary = preservesDeferralAcceptance ? originalBoundary : effectiveBoundary
-      if (acceptanceKind && at >= boundary) {
+      if (acceptanceKind && at >= effectiveBoundary) {
         dispositions.push({
           disposition: 'accept', at,
-          source: 'thread', reviewOrder: reviewOrderById.get(String(comment.review_id || '')),
+          source: 'thread',
           index: afterIndex + 1 + offset,
         })
       }
@@ -309,7 +304,6 @@ export function evaluateProductDecisionGate({
       reviewerLogin,
       afterIndex: evidenceEvent.index,
       highFindingAt,
-      evidenceKind: evidenceEvent.kind,
       evidenceAt: evidenceEvent.at,
       reviews,
       headOid,

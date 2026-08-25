@@ -1,8 +1,8 @@
 import { ownerApprovalMarker } from './high-risk-review-gate.mjs'
 import { isMergeOwner } from './merge-owner-logins.mjs'
 
-const HIGH_SEVERITY_PATTERN =
-  /(?:alt=["']?P([01])["']?|badge\/P([01])-|\bP([01])\b)/i
+const SEVERITY_PATTERN =
+  /(?:alt=["']?P([012])["']?|badge\/P([012])-|\bP([012])\b)/i
 
 const PRODUCT_DEFERRAL_PATTERN =
   /(?:产品(?:决定|决策|取舍)|不在本\s*PR\s*(?:修|改|处理)|超出(?:本\s*PR\s*)?范围|不改|不修|暂不处理|后续(?:处理|再处理|修复|解决|\s*PR|\s*issue)|另开(?:\s*PR|\s*issue)?|(?:会|将|将在)[^。！？!?\n]{0,30}(?:修复|处理|解决)|(?:下个|下一(?:个)?|以后|稍后)[^。！？!?\n]{0,24}(?:修复|处理|解决))|\b(?:product\s+(?:decision|trade-?off)|out\s+of\s+scope|not\s+in\s+this\s+PR|won't\s+fix|will\s+not\s+fix|defer(?:red|ring)?|follow-?up\s+(?:PR|issue)|separate\s+(?:PR|issue)|(?:will|plan(?:ned)?\s+to|going\s+to)[^.\n]{0,40}(?:fix|address|resolve)[^.\n]{0,40}(?:later|follow-?up|next\s+(?:PR|pull\s+request))|(?:fix|address|resolve)[^.\n]{0,20}(?:this|it)[^.\n]{0,20}later)\b/i
@@ -18,6 +18,9 @@ const REVIEWER_REJECTION_PATTERN =
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
+
+const NEGATED_FINDING_FIXED_PATTERN =
+  /(?:未|尚未|没有|并未|还没)(?:修复|处理|解决|改好|补(?:上|回归)?测试)|\b(?:not|isn't|is\s+not|wasn't|was\s+not|aren't|are\s+not|weren't|were\s+not|haven't|have\s+not|hasn't|has\s+not|hadn't|had\s+not|never)\s+(?:been\s+)?(?:fixed|addressed|resolved|implemented)\b/i
 
 function sameHead(value, headOid) {
   return String(value || '').toLowerCase() === String(headOid || '').toLowerCase()
@@ -49,10 +52,19 @@ function isProductDeferral(body) {
   return PRODUCT_DEFERRAL_PATTERN.test(value)
 }
 
+function isFindingFixedClaim(body) {
+  const value = String(body || '')
+  return !NEGATED_FINDING_FIXED_PATTERN.test(value) && FINDING_FIXED_PATTERN.test(value)
+}
+
 function severityOf(body) {
-  const match = String(body || '').match(HIGH_SEVERITY_PATTERN)
+  const match = String(body || '').match(SEVERITY_PATTERN)
   const level = match?.slice(1).find(Boolean)
   return level ? `P${level}` : null
+}
+
+function isHighSeverity(severity) {
+  return severity === 'P0' || severity === 'P1'
 }
 
 export function normalizeProductDecisionIssueComment(comment) {
@@ -78,39 +90,47 @@ export function normalizeProductDecisionThread(thread) {
   }
 }
 
-function isReviewerAcceptance({ thread, reviewerLogin, deferralIndex, reviews, headOid }) {
+function isReviewerAcceptance({ thread, reviewerLogin, deferralIndex, notBefore, reviews, headOid }) {
   const deferral = thread.comments[deferralIndex]
-  const deferralAt = commentTime(deferral) || Number.MAX_SAFE_INTEGER
+  // Editing the author's existing deferral must not invalidate an acceptance
+  // that was explicitly given after the original disposition was created.
+  const deferralAt = Math.max(
+    dispositionTime(deferral) || Number.MAX_SAFE_INTEGER,
+    notBefore || 0,
+  )
   const dispositions = []
-  let index = 0
 
   for (const comment of thread.comments.slice(deferralIndex + 1)) {
-    index++
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
     const at = dispositionTime(comment)
     if (at < deferralAt) continue
     if (isExplicitReviewerRejection(comment.body)) {
-      dispositions.push({ disposition: 'reject', at, index })
+      dispositions.push({ disposition: 'reject', at })
     } else if (isExplicitReviewerAcceptance(comment.body)) {
-      dispositions.push({ disposition: 'accept', at, index })
+      dispositions.push({ disposition: 'accept', at })
     }
   }
 
   for (const review of reviews) {
-    index++
     if (String(review.login || '').toLowerCase() !== reviewerLogin
       || !sameHead(review.commit_id, headOid)) continue
     const at = eventTime(review.submitted_at)
     if (at < deferralAt) continue
     const state = String(review.state || '').toUpperCase()
     if (state === 'CHANGES_REQUESTED') {
-      dispositions.push({ disposition: 'reject', at, index })
+      dispositions.push({ disposition: 'reject', at })
     } else if (state === 'APPROVED') {
-      dispositions.push({ disposition: 'accept', at, index })
+      dispositions.push({ disposition: 'accept', at })
     }
   }
 
-  dispositions.sort((left, right) => left.at - right.at || left.index - right.index)
+  // GitHub does not expose a reliable cross-source sequence number for review
+  // submissions and thread comments. At an identical timestamp, retain the
+  // blocking disposition so an APPROVED review cannot hide a later rejection.
+  dispositions.sort((left, right) => (
+    left.at - right.at
+      || Number(left.disposition === 'reject') - Number(right.disposition === 'reject')
+  ))
   return dispositions.at(-1)?.disposition === 'accept'
 }
 
@@ -147,20 +167,27 @@ export function evaluateProductDecisionGate({
 
   for (const thread of threads) {
     if (!thread.is_resolved || thread.is_outdated) continue
-    const findingIndex = thread.comments.findIndex((comment) => (
-      String(comment.login || '').toLowerCase() !== author && severityOf(comment.body)
-    ))
-    if (findingIndex < 0) continue
+    const findingEvents = thread.comments
+      .map((comment, index) => ({ comment, index, severity: severityOf(comment.body) }))
+      .filter(({ comment, severity }) => (
+        String(comment.login || '').toLowerCase() !== author && severity
+      ))
+    const highFinding = findingEvents.find(({ severity }) => isHighSeverity(severity))
+    if (!highFinding) continue
 
-    const finding = thread.comments[findingIndex]
-    const severity = severityOf(finding.body)
+    // A finding may be raised as P2, receive an author deferral, and then be
+    // escalated to P1. Preserve dispositions from the complete finding thread.
+    const findingStartIndex = findingEvents[0].index
+    const finding = highFinding.comment
+    const severity = highFinding.severity
+    const highFindingAt = commentTime(finding)
     const reviewerLogin = String(finding.login || '').toLowerCase()
     const authorEvents = thread.comments
       .map((comment, index) => ({ comment, index }))
       .filter(({ comment, index }) => (
-        index > findingIndex
+        index > findingStartIndex
           && String(comment.login || '').toLowerCase() === author
-          && (isProductDeferral(comment.body) || FINDING_FIXED_PATTERN.test(String(comment.body || '')))
+          && (isProductDeferral(comment.body) || isFindingFixedClaim(comment.body))
       ))
       .map(({ comment, index }) => ({
         kind: isProductDeferral(comment.body) ? 'deferral' : 'fixed',
@@ -179,11 +206,21 @@ export function evaluateProductDecisionGate({
     }
 
     const deferralIndex = latestDeferral.index
-    if (isReviewerAcceptance({ thread, reviewerLogin, deferralIndex, reviews, headOid })) continue
+    if (isReviewerAcceptance({
+      thread,
+      reviewerLogin,
+      deferralIndex,
+      notBefore: highFindingAt,
+      reviews,
+      headOid,
+    })) continue
     blockers.push({
       severity,
       reviewer: finding.login || 'unknown',
-      at: commentTime(thread.comments[deferralIndex]) || Number.MAX_SAFE_INTEGER,
+      at: Math.max(
+        commentTime(thread.comments[deferralIndex]) || Number.MAX_SAFE_INTEGER,
+        highFindingAt,
+      ),
     })
   }
 

@@ -257,6 +257,110 @@ test('P2、过时 finding 和真实修复回复不触发产品决策门', () => 
   }
 })
 
+test('P2 后的作者 deferral 在 finding 升级为 P1 后仍需授权', () => {
+  const candidate = thread({
+    severity: 'P2',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  candidate.comments.push({
+    login: 'codex', body: 'Escalating this finding to P1 because it changes product behavior.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  const result = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  })
+  assert.equal(result.satisfied, false)
+  assert.equal(result.blockers[0].severity, 'P1')
+})
+
+test('P2 deferral 的旧 acceptance 不能放行随后升级的 P1', () => {
+  const candidate = thread({
+    severity: 'P2',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'Accepted as a separate concern; non-blocking.',
+  })
+  candidate.comments.push({
+    login: 'codex', body: 'Escalating this finding to P1 because it changes product behavior.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'P1 deferral accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:04:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
+test('否定式修复声明不能清除已有产品 deferral', () => {
+  for (const body of [
+    'This is not fixed.',
+    "I haven't addressed the finding.",
+    '该问题尚未处理。',
+    '这个 finding 还没修复。',
+  ]) {
+    const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+    candidate.comments.push({
+      login: 'author', body, created_at: '2026-08-25T03:03:00Z',
+    })
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, false, body)
+  }
+})
+
+test('同秒 APPROVED 与 thread rejection 以阻塞 disposition 为准', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  candidate.comments.push({
+    login: 'codex', body: 'This remains a blocker.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    reviews: [{
+      login: 'codex', state: 'APPROVED', commit_id: head,
+      submitted_at: '2026-08-25T03:02:00Z',
+    }],
+  }).satisfied, false)
+})
+
+test('编辑既有 deferral 保留 reviewer acceptance，后续 rejection 仍可重新阻塞', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'Accepted as a separate concern; non-blocking.',
+  })
+  candidate.comments[1].updated_at = '2026-08-25T03:03:00Z'
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+
+  candidate.comments.push({
+    login: 'codex', body: 'I retract that acceptance; this remains a blocker.',
+    created_at: '2026-08-25T03:04:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+})
+
 test('普通以后修措辞属于产品取舍延期', () => {
   for (const authorReply of [
     '这个问题会在后续修复。',

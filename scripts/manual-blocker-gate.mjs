@@ -19,10 +19,10 @@ const CLAUSE_UNCERTAINTY =
   /[?？]|(?:吗|么|呢|吧)(?:$|[\s。！？!?，,；;])/i
 
 const PENDING_CONDITION =
-  /(?:不同意|不确认|不允许|不批准|未批准|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不|(?:如果|若)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|(?:仍|还|尚)(?:然)?(?:未|没)(?:修复|解决|完成|通过|验证|批准|就绪)|(?:验证|审查|检查|迁移|发布)[^。！？!?；;\n]{0,24}(?:仍|还|尚)?(?:未|没)(?:修复|解决|完成|通过))|\b(?:not\s+approved?|do\s+not\s+approve|don't\s+approve|need(?:s|ed)?\s+to|must|before)\b|\b(?:is|are|remain(?:s)?)\s+(?:still\s+)?(?:broken|unfinished|incomplete|failing|unsafe|outstanding|not\s+(?:fixed|resolved|complete|completed|validated|approved|ready))\b|\bstill\s+(?:a\s+)?(?:merge\s+|release\s+|functionality\s+)?blocker\b|\b(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b/i
+  /(?:不同意|不确认|不允许|不批准|未批准|未签字|没有签字|尚未签字|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不|(?:如果|若)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|(?:仍|还|尚)(?:然)?(?:未|没)(?:修复|解决|完成|通过|验证|批准|签字|就绪)|(?:验证|审查|检查|迁移|发布)[^。！？!?；;\n]{0,24}(?:仍|还|尚)?(?:未|没)(?:修复|解决|完成|通过))|\b(?:not\s+approved?|not\s+signed\s+off|has(?:n't|\s+not)\s+signed\s+off|do\s+not\s+approve|don't\s+approve|need(?:s|ed)?\s+to|must|before)\b|\b(?:is|are|remain(?:s)?)\s+(?:still\s+)?(?:broken|unfinished|incomplete|failing|unsafe|outstanding|not\s+(?:fixed|resolved|complete|completed|validated|approved|ready))\b|\bstill\s+(?:a\s+)?(?:merge\s+|release\s+|functionality\s+)?blocker\b|\b(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b[^.。！？!?；;\n]{0,100}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|safe|healthy|done)\b/i
 
 const STANDALONE_APPROVAL_CONDITION =
-  /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:merge|merging)\b|^(?:如果|若|待|等到|需要先|必须先|先)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|\b(?:must|needs?\s+to|has\s+to)\b[^。！？!?；;\n]{0,80}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:ed)?\s*off|approve(?:d)?|succeed(?:ed)?|green|ready|done|before\s+(?:merge|merging))\b/i
+  /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b[^.。！？!?；;\n]{0,100}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|safe|healthy|done)\b|\bbefore\s+(?:merge|merging)\b|^(?:如果|若|待|等到|需要先|必须先|先)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|\b(?:must|needs?\s+to|has\s+to)\b[^。！？!?；;\n]{0,80}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|done|before\s+(?:merge|merging))\b/i
 
 const CROSS_PR_PREREQUISITE =
   /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:this\s+)?(?:merge|merging)\b|\b(?:fixed|resolved|completed|approved|green|ready|done|merged)\s+first\b|^(?:如果|若|待|等到)[^。！？!?；;\n]{0,100}|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿|合并)后|先[^。！？!?；;\n]{0,80}合并|才能(?:合并|merge)/i
@@ -115,7 +115,8 @@ function withoutNonBlockingSignals(text) {
 function classifyTextIntent(body, headOid, prNumber) {
   if (STEWARD_MARKERS.some((marker) => String(body || '').includes(marker))) return null
   const clauses = clausesFrom(body)
-  let intent = null
+  let sawBlock = false
+  let sawRelease = false
   for (const [clauseIndex, clause] of clauses.entries()) {
     const clauseUncertainty = CLAUSE_UNCERTAINTY.test(clause)
     const pendingCondition = isPendingReleaseCondition(clause, prNumber)
@@ -124,7 +125,7 @@ function classifyTextIntent(body, headOid, prNumber) {
     const explicitBlock = EXPLICIT_VETO_PATTERN.test(blockableClause)
       || BLOCK_PATTERNS.some((pattern) => pattern.test(blockableClause))
     if (explicitBlock) {
-      intent = 'block'
+      sawBlock = true
     }
 
     // A veto in the same clause always wins. Questions and conditional
@@ -142,10 +143,13 @@ function classifyTextIntent(body, headOid, prNumber) {
       && !relatedCondition
       && APPROVAL_PATTERN.test(clause)
       && referencesHead(clause, headOid)) {
-      intent = 'release'
+      sawRelease = true
     }
   }
-  return intent
+  // One comment is one maintainer disposition. Contradictory text is not an
+  // explicit release: a veto anywhere in that message keeps the gate closed.
+  if (sawBlock) return 'block'
+  return sawRelease ? 'release' : null
 }
 
 function recordTextSignals({ body, login, at, headOid, prNumber, latestBlock, latestRelease, nextIndex }) {

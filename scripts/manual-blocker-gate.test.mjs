@@ -455,6 +455,86 @@ test('同一条消息的显式 veto 不会被后续条件性放行覆盖', () =>
   }
 })
 
+test('同一条消息的显式 veto 不会被后续无条件放行覆盖', () => {
+  for (const body of [
+    `Do not merge. LGTM ${headOid.slice(0, 7)}.`,
+    `不要合并。可以合并 ${headOid.slice(0, 7)}。`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    })
+    assert.equal(result.satisfied, false, body)
+    assert.deepEqual(result.blockers, ['reviewer'], body)
+  }
+})
+
+test('独立消息中的当前 head 无条件放行仍可解除较早 veto', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    comments: [
+      {
+        login: 'reviewer', permission: 'write', body: 'Do not merge.',
+        created_at: '2026-08-24T00:00:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write', body: `LGTM ${headOid.slice(0, 7)}.`,
+        created_at: '2026-08-24T00:01:00Z',
+      },
+    ],
+  })
+  assert.equal(result.satisfied, true)
+})
+
+test('adversative 未签字条件不能伪装成当前 head 无条件放行', () => {
+  for (const body of [
+    `LGTM ${headOid.slice(0, 7)}, but Alice has not signed off.`,
+    `LGTM ${headOid.slice(0, 7)}, however security has not signed off.`,
+    `可以合并 ${headOid.slice(0, 7)}，但 Alice 尚未签字。`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    })
+    assert.equal(result.satisfied, false, body)
+  }
+})
+
+test('无关的部署后说明不会压制当前 head 无条件放行', () => {
+  for (const body of [
+    `LGTM ${headOid.slice(0, 7)}. When deployed, this will reduce latency.`,
+    `LGTM ${headOid.slice(0, 7)}. After deployment, users will see lower latency.`,
+    `可以合并 ${headOid.slice(0, 7)}。上线后延迟会降低。`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    })
+    assert.equal(result.satisfied, true, body)
+  }
+})
+
 test('疑问式放行不能解除人工阻止', () => {
   for (const body of [
     `可以合并 ${headOid.slice(0, 7)} 吗？`,

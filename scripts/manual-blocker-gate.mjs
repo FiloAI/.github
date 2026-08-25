@@ -45,7 +45,7 @@ function referencesHead(text, headOid) {
 
 function clausesFrom(body) {
   return String(body || '')
-    .split(/[。！？!?；;\n]+|\.(?:\s+|$)/)
+    .split(/(?<=[。！？!?；;])|\n+|(?<=\.)\s+/)
     .map((part) => part.trim())
     .filter(Boolean)
 }
@@ -53,6 +53,7 @@ function clausesFrom(body) {
 function classifyTextIntent(body, headOid) {
   if (STEWARD_MARKERS.some((marker) => String(body || '').includes(marker))) return null
   let intent = null
+  let sawBlock = false
   let openCondition = false
   for (const clause of clausesFrom(body)) {
     if (UNCERTAIN_OR_PENDING.test(clause)) openCondition = true
@@ -61,13 +62,14 @@ function classifyTextIntent(body, headOid) {
       || (!NON_BLOCKING_PATTERN.test(clause)
         && BLOCK_PATTERNS.some((pattern) => pattern.test(clause)))) {
       intent = 'block'
+      sawBlock = true
     }
     if (APPROVAL_PATTERN.test(clause)
       && referencesHead(clause, headOid)) {
       intent = 'release'
     }
   }
-  if (intent === 'release' && openCondition) return null
+  if (intent === 'release' && openCondition) return sawBlock ? 'block' : null
   return intent
 }
 

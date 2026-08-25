@@ -328,3 +328,43 @@ test('条件性放行无论分句顺序都不能解除人工阻止', () => {
     assert.equal(result.satisfied, false, body)
   }
 })
+
+test('同一条消息的显式 veto 不会被后续条件性放行覆盖', () => {
+  for (const body of [
+    `Do not merge. LGTM ${headOid.slice(0, 7)}, but the migration is unsafe.`,
+    `不要合并。可以合并 ${headOid.slice(0, 7)}，但仍需修复迁移状态。`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    })
+    assert.equal(result.satisfied, false, body)
+    assert.deepEqual(result.blockers, ['reviewer'], body)
+  }
+})
+
+test('疑问式放行不能解除人工阻止', () => {
+  for (const body of [
+    `可以合并 ${headOid.slice(0, 7)} 吗？`,
+    `OK to merge ${headOid.slice(0, 7)}?`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: '不要合并',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    })
+    assert.equal(result.satisfied, false, body)
+    assert.deepEqual(result.blockers, ['reviewer'], body)
+  }
+})

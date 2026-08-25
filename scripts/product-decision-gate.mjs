@@ -23,18 +23,13 @@ const REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN =
   /(?:接受|同意)[^。！？!?\n]{0,32}(?:延期|取舍|范围(?:说明)?|另开|后续处理|单独处理)|可以另开|单独处理|\b(?:accept(?:ed)?|agree(?:d)?)\b[^.。！？!?\n]{0,40}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr))\b|\bmakes?\s+sense\b[^.。！？!?\n]{0,40}\b(?:scope|separate|follow-?up)\b|\b(?:separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
 
 const REVIEWER_REJECTION_PATTERN =
-  /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|合并前仍需|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?separate\s+(?:concern|issue|pr)\b|\b(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+in\s+this\s+(?:pr|pull\s+request)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
+  /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|合并前(?:仍需|请|必须)?[^。！？!?\n]{0,24}(?:修复|处理|解决)|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?separate\s+(?:concern|issue|pr)\b|\b(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+in\s+this\s+(?:pr|pull\s+request)\b|\b(?:please\s+)?(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+before\s+(?:merge|merging)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
 
 const NEGATED_FINDING_FIXED_PATTERN =
   /(?:未|尚未|没有|并未|还没)(?:修复|处理|解决|改好|补(?:上|回归)?测试)|\b(?:not|isn't|is\s+not|wasn't|was\s+not|aren't|are\s+not|weren't|were\s+not|haven't|have\s+not|hasn't|has\s+not|hadn't|had\s+not|never)\s+(?:been\s+)?(?:fixed|addressed|resolved|implemented)\b/i
-
-const DISPOSITION_SOURCE_ORDER = {
-  review: 0,
-  thread: 1,
-}
 
 function sameHead(value, headOid) {
   return String(value || '').toLowerCase() === String(headOid || '').toLowerCase()
@@ -85,9 +80,24 @@ function severityOf(body) {
   return level ? `P${level}` : null
 }
 
+function destinationSeverityOf(body) {
+  const value = String(body || '')
+  const target = value.match(
+    /(?:\b(?:to|into|as)\s+P([012])\b|\bP[012]\s*(?:-|=)?\>\s*P([012])\b|(?:改为|调整为|定为|升级为|降级为|提高到|降低到|变为|至|到)\s*P([012])\b)/i,
+  )
+  const targetLevel = target?.slice(1).find(Boolean)
+  if (targetLevel) return `P${targetLevel}`
+
+  const levels = [...value.matchAll(new RegExp(SEVERITY_PATTERN.source, 'ig'))]
+    .map((match) => match.slice(1).find(Boolean))
+    .filter(Boolean)
+  const last = levels.at(-1)
+  return last ? `P${last}` : null
+}
+
 function severityDispositionOf(body, initial = false) {
   const value = String(body || '')
-  const severity = severityOf(value)
+  const severity = initial ? severityOf(value) : destinationSeverityOf(value)
   if (!severity) return null
   if (initial || SEVERITY_CHANGE_PATTERN.test(value)) return severity
   return null
@@ -116,8 +126,31 @@ export function normalizeProductDecisionThread(thread) {
       body: comment.body || '',
       created_at: comment.createdAt,
       updated_at: comment.updatedAt,
+      review_id: comment.pullRequestReview?.databaseId || null,
     })),
   }
+}
+
+function latestDisposition(dispositions) {
+  const latestAt = Math.max(...dispositions.map((item) => item.at))
+  const candidates = dispositions.filter((item) => item.at === latestAt)
+  if (candidates.length === 1) return candidates[0].disposition
+
+  const reviewOrders = candidates.map((item) => item.reviewOrder)
+  if (reviewOrders.every(Number.isSafeInteger) && reviewOrders.every((order) => order >= 0)) {
+    const latestReviewOrder = Math.max(...reviewOrders)
+    const latestReview = candidates.filter((item) => item.reviewOrder === latestReviewOrder)
+    if (latestReview.length === 1) return latestReview[0].disposition
+    if (latestReview.every((item) => item.source === 'thread')) {
+      return latestReview.sort((left, right) => left.index - right.index).at(-1).disposition
+    }
+    return latestReview.some((item) => item.disposition === 'reject') ? 'reject' : 'accept'
+  }
+
+  if (candidates.every((item) => item.source === candidates[0].source)) {
+    return candidates.sort((left, right) => left.index - right.index).at(-1).disposition
+  }
+  return candidates.some((item) => item.disposition === 'reject') ? 'reject' : 'accept'
 }
 
 function latestReviewerDisposition({
@@ -134,6 +167,7 @@ function latestReviewerDisposition({
   const originalBoundary = Math.max(evidenceCreatedAt, highFindingAt || 0)
   const effectiveBoundary = Math.max(evidenceAt || evidenceCreatedAt, highFindingAt || 0)
   const dispositions = []
+  const reviewOrderById = new Map(reviews.map((review, index) => [String(review.id || ''), index]))
 
   for (const [offset, comment] of thread.comments.slice(afterIndex + 1).entries()) {
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
@@ -142,7 +176,7 @@ function latestReviewerDisposition({
       if (at >= originalBoundary) {
         dispositions.push({
           disposition: 'reject', at,
-          sourceOrder: DISPOSITION_SOURCE_ORDER.thread,
+          source: 'thread', reviewOrder: reviewOrderById.get(String(comment.review_id || '')),
           index: afterIndex + 1 + offset,
         })
       }
@@ -154,7 +188,7 @@ function latestReviewerDisposition({
       if (acceptanceKind && at >= boundary) {
         dispositions.push({
           disposition: 'accept', at,
-          sourceOrder: DISPOSITION_SOURCE_ORDER.thread,
+          source: 'thread', reviewOrder: reviewOrderById.get(String(comment.review_id || '')),
           index: afterIndex + 1 + offset,
         })
       }
@@ -169,28 +203,20 @@ function latestReviewerDisposition({
     if (state === 'CHANGES_REQUESTED' && at >= originalBoundary) {
       dispositions.push({
         disposition: 'reject', at,
-        sourceOrder: DISPOSITION_SOURCE_ORDER.review,
+        source: 'review', reviewOrder: index,
         index,
       })
     } else if (state === 'APPROVED' && at >= effectiveBoundary) {
       dispositions.push({
         disposition: 'accept', at,
-        sourceOrder: DISPOSITION_SOURCE_ORDER.review,
+        source: 'review', reviewOrder: index,
         index,
       })
     }
   }
 
   if (dispositions.length === 0) return null
-  // GitHub timestamps are only second-granular here. A thread reply is the
-  // reviewer's more specific follow-up to a formal review, so it wins a tie;
-  // indices preserve the API order within each source.
-  dispositions.sort((left, right) => (
-    left.at - right.at
-      || left.sourceOrder - right.sourceOrder
-      || left.index - right.index
-  ))
-  return dispositions.at(-1).disposition
+  return latestDisposition(dispositions)
 }
 
 function ownerDecisionEvidence({ authorLogin, headOid, after, reviews, comments }) {

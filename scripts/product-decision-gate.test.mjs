@@ -36,12 +36,14 @@ test('live GitHub 字段归一化保留 created/updated 时间', () => {
     comments: { nodes: [{
       author: { login: 'author' }, body: 'out of scope',
       createdAt: '2026-08-25T03:00:00Z', updatedAt: '2026-08-25T03:02:00Z',
+      pullRequestReview: { databaseId: 1234 },
     }] },
   }), {
     is_resolved: true, is_outdated: false, resolved_by: 'codex',
     comments: [{
       login: 'author', body: 'out of scope',
       created_at: '2026-08-25T03:00:00Z', updated_at: '2026-08-25T03:02:00Z',
+      review_id: 1234,
     }],
   })
 })
@@ -165,6 +167,28 @@ test('reviewer 最新相关 disposition 覆盖较早接受', () => {
       },
     ],
   }).satisfied, false)
+})
+
+test('reviewer 直接要求合并前修复会撤回较早 acceptance', () => {
+  for (const rejection of [
+    'Actually, please fix this before merging.',
+    'Please address the finding before merge.',
+    '请在合并前修复这个问题。',
+  ]) {
+    const candidate = thread({
+      authorReply: 'Out of scope; defer to a follow-up PR.',
+      reviewerReply: 'Accepted as a separate concern; non-blocking.',
+    })
+    candidate.comments.push({
+      login: 'codex', body: rejection,
+      created_at: '2026-08-25T03:03:00Z',
+    })
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, false, rejection)
+  }
 })
 
 test('编辑旧 acceptance 不能覆盖后续 rejection', () => {
@@ -338,6 +362,34 @@ test('P2 后的作者 deferral 在 finding 升级为 P1 后仍需授权', () => 
   assert.equal(result.blockers[0].severity, 'P1')
 })
 
+test('严重度变更使用目标值而不是 from 后的旧值', () => {
+  const candidate = thread({
+    severity: 'P2',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  candidate.comments.push({
+    login: 'codex', body: 'Escalating this finding from P2 to P1.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  const result = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  })
+  assert.equal(result.satisfied, false)
+  assert.equal(result.blockers[0].severity, 'P1')
+
+  candidate.comments.push({
+    login: 'codex', body: 'Downgrading this finding from P1 to P2.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
 test('P2 deferral 的旧 acceptance 不能放行随后升级的 P1', () => {
   const candidate = thread({
     severity: 'P2',
@@ -441,6 +493,50 @@ test('同秒 CHANGES_REQUESTED 后的 thread acceptance 按跨来源事件顺序
   const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
   candidate.comments.push({
     login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:02:00Z', review_id: 102,
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    reviews: [{
+      id: 101,
+      login: 'codex', state: 'CHANGES_REQUESTED', commit_id: head,
+      submitted_at: '2026-08-25T03:02:00Z',
+    }, {
+      id: 102,
+      login: 'codex', state: 'COMMENTED', commit_id: head,
+      submitted_at: '2026-08-25T03:02:00Z',
+    }],
+  }).satisfied, true)
+})
+
+test('同秒 thread acceptance 后的 CHANGES_REQUESTED 按 review 列表顺序保持阻塞', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:02:00Z', review_id: 101,
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    reviews: [{
+      id: 101,
+      login: 'codex', state: 'COMMENTED', commit_id: head,
+      submitted_at: '2026-08-25T03:02:00Z',
+    }, {
+      id: 102,
+      login: 'codex', state: 'CHANGES_REQUESTED', commit_id: head,
+      submitted_at: '2026-08-25T03:02:00Z',
+    }],
+  }).satisfied, false)
+})
+
+test('跨来源同秒缺少可靠顺序时保持 fail-closed', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
     created_at: '2026-08-25T03:02:00Z',
   })
   assert.equal(evaluateProductDecisionGate({
@@ -451,7 +547,7 @@ test('同秒 CHANGES_REQUESTED 后的 thread acceptance 按跨来源事件顺序
       login: 'codex', state: 'CHANGES_REQUESTED', commit_id: head,
       submitted_at: '2026-08-25T03:02:00Z',
     }],
-  }).satisfied, true)
+  }).satisfied, false)
 })
 
 test('同秒 thread comments 使用可靠顺序决定最终 disposition', () => {

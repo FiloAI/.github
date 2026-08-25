@@ -312,7 +312,10 @@ function reviewThreadSnapshot(repo, prNumber) {
         isResolved isOutdated resolvedBy { login }
         comments(first: 100) {
           pageInfo { hasNextPage }
-          nodes { body createdAt updatedAt author { login } }
+          nodes {
+            body createdAt updatedAt author { login }
+            pullRequestReview { databaseId }
+          }
         }
       }
     } } } }`
@@ -331,6 +334,7 @@ function productDecisionGate(repo, pr, threads) {
     const reviews = ghJsonPaginated([
       'api', `repos/${repo}/pulls/${pr.number}/reviews`,
     ]).map((review) => ({
+      id: review.id,
       login: review.user?.login || '',
       state: review.state || '',
       commit_id: review.commit_id || '',

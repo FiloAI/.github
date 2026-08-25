@@ -108,6 +108,10 @@ test('原阻止者转述或引用第三方批准不能解除自己的 veto', () 
     `Alice said LGTM ${headOid.slice(0, 7)}.`,
     `Alice: LGTM ${headOid.slice(0, 7)}.`,
     `Alice gave LGTM ${headOid.slice(0, 7)}.`,
+    `Alice LGTM ${headOid.slice(0, 7)}.`,
+    `alice LGTM ${headOid.slice(0, 7)}.`,
+    `@alice LGTM ${headOid.slice(0, 7)}.`,
+    `Security Team LGTM ${headOid.slice(0, 7)}.`,
     `Alice's LGTM ${headOid.slice(0, 7)}.`,
     `LGTM ${headOid.slice(0, 7)} from Alice.`,
     `I heard Alice approved ${headOid.slice(0, 7)}.`,
@@ -521,6 +525,8 @@ test('主动英文 merge veto 会阻塞普通评论与 COMMENTED review', () => 
     "I'm blocking this merge.",
     'We are blocking the merge until migration passes.',
     'Block the merge until migration passes.',
+    'I veto this merge.',
+    'We are vetoing the merge until migration passes.',
     `I'm blocking this merge. LGTM ${headOid.slice(0, 7)}.`,
     `LGTM ${headOid.slice(0, 7)}. Block the merge until migration passes.`,
   ]) {
@@ -541,6 +547,24 @@ test('主动英文 merge veto 会阻塞普通评论与 COMMENTED review', () => 
       }],
     })
     assert.equal(reviewResult.satisfied, false, body)
+  }
+})
+
+test('明确否定 veto 的说明不会重新生成阻止', () => {
+  for (const body of [
+    'I do not veto this merge.',
+    "We don't veto the merge.",
+    'I no longer veto this merge.',
+    "I'm not vetoing this merge.",
+    "We aren't vetoing the merge.",
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    }).satisfied, true, body)
   }
 })
 
@@ -668,6 +692,9 @@ test('条件性放行无论分句顺序都不能解除人工阻止', () => {
     `LGTM ${headOid.slice(0, 7)} awaiting security approval`,
     `LGTM ${headOid.slice(0, 7)} pending architecture review`,
     `LGTM ${headOid.slice(0, 7)} subject to database migration validation`,
+    `LGTM ${headOid.slice(0, 7)} pending deployment`,
+    `LGTM ${headOid.slice(0, 7)} subject to deployment`,
+    `LGTM ${headOid.slice(0, 7)} awaiting rollout`,
     `LGTM ${headOid.slice(0, 7)}，等待安全审查`,
   ]) {
     const result = evaluateManualBlockers({

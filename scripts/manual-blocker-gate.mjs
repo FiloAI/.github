@@ -13,7 +13,7 @@ const EXPLICIT_VETO_PATTERN =
   /(?:当前|现在|暂时)?(?:不宜|不应|不能|不可|不要|先别|暂不|禁止)(?:(?!阻塞|阻断|卡住|拦截)[^。！？!\n]){0,24}(?:合并|merge)|\b(?:do\s+not|don't|cannot|can't|should\s+not|must\s+not)\s+merge\b|\bnot\s+ready\s+to\s+merge\b/i
 
 const ACTIVE_MERGE_VETO_PATTERN =
-  /\b(?:(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+)?block(?:ing)?\s+(?:this\s+|the\s+)?merge\b/i
+  /\b(?:(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+)?block(?:ing)?\s+(?:this\s+|the\s+)?merge\b|\b(?:(?:i|we)\s+)?veto(?:ed|ing)?\s+(?:this\s+|the\s+)?merge\b/i
 
 const APPROVAL_PATTERN =
   /(?:同意|确认|允许)(?:这个|该)?(?:\s*pr)?(?:可以)?(?:直接)?合并|可以(?:直接)?合并|(?:代码)?(?:审查|审核)(?:已经|已)?通过(?:了)?|\b(?:lgtm|approved?|ok(?:ay)?\s+to\s+merge|please\s+merge|merge\s+it|go\s+ahead|ship\s+it)\b/i
@@ -36,6 +36,9 @@ const REPORTED_APPROVAL_PATTERN =
 const DIRECT_THIRD_PARTY_RELEASE_PATTERN =
   /(?:^|[。！？!?；;，,]\s*)(?!(?:i|we)\b)(?:@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,3})\s*(?::|：|\b(?:gave|gives|left|posted|provided)\b)\s*(?:an?\s+)?(?:lgtm|approved?|approval|ok(?:ay)?\s+to\s+merge|go\s+ahead|ship\s+it)\b/i
 
+const BARE_ACTOR_RELEASE_PATTERN =
+  /(?:^|[。！？!?；;，,]\s*)(?!(?:I|We|i|we|my|our|strongly|definitely|personally|fully|clearly|overall)\b)(?:@[A-Za-z0-9_.-]+|[A-Za-z][A-Za-z0-9_.-]*(?:\s+[A-Z][A-Za-z0-9_.-]*){0,3})\s+[Ll][Gg][Tt][Mm]\b/u
+
 const ATTRIBUTED_APPROVAL_SOURCE_PATTERN =
   /(?:^|[。！？!?；;，,]\s*)(?!(?:i|we|my|our)\b)(?:@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,3})['’]s\s+(?:lgtm|approval|ok(?:ay)?\s+to\s+merge)\b|\b(?:lgtm|approval|approved?)\b[^.。！？!?\n]{0,20}\b(?:from|by)\s+(?!(?:me|us)\b)(?:@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,3})\b/i
 
@@ -52,7 +55,7 @@ const STANDALONE_APPROVAL_CONDITION =
   /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b[^.。！？!?；;\n]{0,100}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|safe|healthy|done)\b|\bbefore\s+(?:merge|merging)\b|^(?:如果|若|待|等到|需要先|必须先|先)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|\b(?:must|needs?\s+to|has\s+to)\b[^。！？!?；;\n]{0,80}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|done|before\s+(?:merge|merging))\b/i
 
 const BARE_APPROVAL_CONDITION =
-  /\b(?:pending|subject\s+to|awaiting)\s+(?:an?\s+|the\s+)?(?:[\p{L}\p{N}_-]+[\s-]+){0,3}(?:review|approval|validation|sign[-\s]?off|audit|check)\b|(?:等待|有待|待|须经|需经)[^。！？!?；;\n]{0,24}(?:(?:安全|隐私|法务|发布|生产|迁移|维护者|owner|人工)[^。！？!?；;\n]{0,8})?(?:审查|审核|批准|确认|验证|签字|检查)/iu
+  /\b(?:pending|subject\s+to|awaiting)\b|(?:等待|有待|待|须经|需经)[^。！？!?；;\n]{0,24}(?:(?:安全|隐私|法务|发布|生产|迁移|维护者|owner|人工)[^。！？!?；;\n]{0,8})?(?:审查|审核|批准|确认|验证|签字|检查)/iu
 
 const CROSS_PR_PREREQUISITE =
   /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:this\s+)?(?:merge|merging)\b|\bbefore\s+(?:this\s+one|ours)\b|\bbefore\s+(?:(?:we|i|you|they|maintainers?|the\s+team)\s+(?:can\s+|may\s+|should\s+|will\s+)?merge\b|(?:we|i|you|they)\s+merge\b|(?:this|the\s+current)\s+(?:pr|pull\s+request)\s+(?:can\s+|may\s+|should\s+|will\s+)?(?:merge|be\s+merged)\b)|\b(?:fixed|resolved|completed|approved|green|ready|done|merged)\s+first\b|^(?:如果|若|待|等到)[^。！？!?；;\n]{0,100}|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿|合并)后|先[^。！？!?；;\n]{0,80}合并|(?:在)?(?:我们|我|维护者|团队)合并(?:本|当前)?(?:\s*PR)?前|(?:在)(?:本|当前|这个|我们的)(?:\s*PR|拉取请求)?\s*(?:合并)?\s*(?:之前|前)\s*(?:合并)?|才能(?:合并|merge)/i
@@ -64,7 +67,7 @@ const INDEPENDENT_FOLLOWUP_OFFER = [
 ]
 
 const NON_BLOCKING_PATTERN =
-  /(?:不能|不会|不应(?:该)?|不得|不要)[^。！？!，,；;\n]{0,16}(?:阻塞|阻断|阻止|卡住|拦截)[^。！？!，,；;\n]{0,8}(?:合并|merge)|(?:不能|不会|不应(?:该)?|不得|不要)[^。！？!，,；;\n]{0,16}(?:阻塞|阻断|阻止|卡住|拦截)[，,]\s*(?:这个|该)?\s*(?:合并|merge)[^。！？!，,；;\n]{0,16}(?:安全|可以|允许|没问题|safe|okay|ok)|(?:不|未)(?:是|属于|构成|算作)[^。！？!，,；;\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!，,；;\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!，,；;\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b|\b(?:(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+)?(?:not|no\s+longer)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:stopped|ceased)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:do\s+not|don['’]t|should\s+not|shouldn['’]t|must\s+not|mustn['’]t)\s+block\s+(?:this\s+|the\s+)?merge\b/i
+  /(?:不能|不会|不应(?:该)?|不得|不要)[^。！？!，,；;\n]{0,16}(?:阻塞|阻断|阻止|卡住|拦截)[^。！？!，,；;\n]{0,8}(?:合并|merge)|(?:不能|不会|不应(?:该)?|不得|不要)[^。！？!，,；;\n]{0,16}(?:阻塞|阻断|阻止|卡住|拦截)[，,]\s*(?:这个|该)?\s*(?:合并|merge)[^。！？!，,；;\n]{0,16}(?:安全|可以|允许|没问题|safe|okay|ok)|(?:不|未)(?:是|属于|构成|算作)[^。！？!，,；;\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!，,；;\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!，,；;\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b|\b(?:(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+)?(?:not|no\s+longer)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:stopped|ceased)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:do\s+not|don['’]t|should\s+not|shouldn['’]t|must\s+not|mustn['’]t)\s+block\s+(?:this\s+|the\s+)?merge\b|\b(?:(?:i|we)\s+)?(?:do\s+not|don['’]t|no\s+longer)\s+veto\s+(?:this\s+|the\s+)?merge\b|\b(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+not\s+vetoing\s+(?:this\s+|the\s+)?merge\b|\bwe\s+aren['’]t\s+vetoing\s+(?:this\s+|the\s+)?merge\b/i
 
 const NEGATED_MERGE_SAFETY_PATTERN =
   /(?:这个|该)?\s*(?:合并|merge)[^。！？!?\n]{0,16}(?:(?<!不是)(?<!并非)不(?:太|够)?(?:安全|可以|允许|行|合适)|无法(?:继续|合并)|有风险)|\b(?:this\s+|the\s+)?merge\b[^.。！？!?\n]{0,24}\b(?:is|remains?|looks?)\s+(?:not\s+(?:safe|okay|ok|allowed|ready)|(?<!not\s)unsafe)\b|\b(?:cannot|can['’]t|should\s+not|shouldn['’]t|must\s+not|mustn['’]t)\s+(?:proceed|merge)\b/i
@@ -154,6 +157,7 @@ function isAttributedOrQuotedApproval(text) {
   if (QUOTED_APPROVAL_PATTERN.test(value)
     || REPORTED_APPROVAL_PATTERN.test(value)
     || DIRECT_THIRD_PARTY_RELEASE_PATTERN.test(value)
+    || BARE_ACTOR_RELEASE_PATTERN.test(value)
     || ATTRIBUTED_APPROVAL_SOURCE_PATTERN.test(value)) return true
   if (FIRST_PERSON_APPROVAL_PATTERN.test(value)) return false
   return THIRD_PARTY_APPROVAL_PATTERN.test(value)

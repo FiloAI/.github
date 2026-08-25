@@ -384,6 +384,10 @@ test('reviewer 明确反对 separate-concern 处理不能命中 acceptance', () 
   for (const rejection of [
     'I reject treating this as a separate concern.',
     'I object to treating this as a separate concern.',
+    'I refuse to accept this as a separate concern.',
+    'I decline to accept this as a separate concern.',
+    'I DECLINED TO ACCEPT this as a separate concern.',
+    'My refusal to accept this as a separate concern remains unchanged.',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,
@@ -402,6 +406,46 @@ test('reviewer 明确反对 separate-concern 处理不能命中 acceptance', () 
       authorReply: 'Out of scope; defer to a follow-up PR.',
       reviewerReply: "I don't object to treating this as a separate concern.",
     })],
+  }).satisfied, true)
+})
+
+test('refuse/decline rejection 遵循 reviewer 时序且 current-head owner 可放行', () => {
+  const rejectedThenAccepted = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'I refuse to accept this as a separate concern.',
+  })
+  rejectedThenAccepted.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [rejectedThenAccepted],
+  }).satisfied, true)
+
+  const acceptedThenRejected = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'Accepted as a separate concern; non-blocking.',
+  })
+  acceptedThenRejected.comments.push({
+    login: 'codex', body: 'I decline to accept this as a separate concern.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [acceptedThenRejected],
+  }).satisfied, false)
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [acceptedThenRejected],
+    reviews: [{
+      login: 'zqchris', state: 'APPROVED', commit_id: head,
+      submitted_at: '2026-08-25T03:04:00Z',
+    }],
   }).satisfied, true)
 })
 

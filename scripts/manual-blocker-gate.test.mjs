@@ -106,6 +106,10 @@ test('原阻止者转述或引用第三方批准不能解除自己的 veto', () 
     `Alice hereby approved ${headOid.slice(0, 7)}.`,
     `The security team has approved ${headOid.slice(0, 7)}.`,
     `Alice said LGTM ${headOid.slice(0, 7)}.`,
+    `Alice: LGTM ${headOid.slice(0, 7)}.`,
+    `Alice gave LGTM ${headOid.slice(0, 7)}.`,
+    `Alice's LGTM ${headOid.slice(0, 7)}.`,
+    `LGTM ${headOid.slice(0, 7)} from Alice.`,
     `I heard Alice approved ${headOid.slice(0, 7)}.`,
     `According to Alice, approved ${headOid.slice(0, 7)}.`,
     `Alice 表示确认可以合并 ${headOid.slice(0, 7)}。`,
@@ -374,6 +378,44 @@ test('逗号分隔的中文非阻止说明不会被跨标点误判为 veto', () 
   }
 })
 
+test('否定安全结论不能被非阻止清理吞掉', () => {
+  for (const body of [
+    '不要阻止，这个合并不安全。',
+    '不要阻止，这个合并不可以。',
+    'Do not block this merge, this merge is not safe.',
+    'Do not block this merge, the merge is unsafe.',
+  ]) {
+    for (const source of ['comments', 'reviews']) {
+      const event = source === 'comments'
+        ? { login: 'reviewer', permission: 'write', body, created_at: '2026-08-24T00:00:00Z' }
+        : {
+            login: 'reviewer', permission: 'write', state: 'COMMENTED', body,
+            commit_id: headOid, submitted_at: '2026-08-24T00:00:00Z',
+          }
+      assert.equal(evaluateManualBlockers({
+        headOid,
+        [source]: [event],
+      }).satisfied, false, `${source}: ${body}`)
+    }
+  }
+})
+
+test('双重否定的安全说明仍可作为非阻止说明', () => {
+  for (const body of [
+    '不要阻止，这个合并不是不安全。',
+    '不要阻止，这个合并并非不可以。',
+    'Do not block this merge, the merge is not unsafe.',
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    }).satisfied, true, body)
+  }
+})
+
 test('疑问式 blocker mention 不会持久化为明确 veto', () => {
   for (const body of [
     'Is this a release blocker?',
@@ -621,6 +663,12 @@ test('条件性放行无论分句顺序都不能解除人工阻止', () => {
     `若安全审查通过，可以合并 ${headOid.slice(0, 7)}`,
     `可以合并 ${headOid.slice(0, 7)}，如果 Alice 签字`,
     `可以合并 ${headOid.slice(0, 7)}，若安全审查通过`,
+    `LGTM ${headOid.slice(0, 7)} pending security review`,
+    `LGTM ${headOid.slice(0, 7)} subject to security review`,
+    `LGTM ${headOid.slice(0, 7)} awaiting security approval`,
+    `LGTM ${headOid.slice(0, 7)} pending architecture review`,
+    `LGTM ${headOid.slice(0, 7)} subject to database migration validation`,
+    `LGTM ${headOid.slice(0, 7)}，等待安全审查`,
   ]) {
     const result = evaluateManualBlockers({
       headOid,

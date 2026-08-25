@@ -33,6 +33,12 @@ const QUOTED_APPROVAL_PATTERN =
 const REPORTED_APPROVAL_PATTERN =
   /\b(?:according\s+to|per)\b[^.。！？!?\n]{0,80}\b(?:lgtm|approved?)\b|\b(?:says?|said|reports?|reported|wrote|writes)\b[^.。！？!?\n]{0,80}\b(?:lgtm|approved?)\b|(?:据|按照|根据)[^。！？!?\n]{0,32}(?:说|表示|回复|评论)[^。！？!?\n]{0,48}(?:lgtm|approved?|同意|确认|允许)/i
 
+const DIRECT_THIRD_PARTY_RELEASE_PATTERN =
+  /(?:^|[。！？!?；;，,]\s*)(?!(?:i|we)\b)(?:@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,3})\s*(?::|：|\b(?:gave|gives|left|posted|provided)\b)\s*(?:an?\s+)?(?:lgtm|approved?|approval|ok(?:ay)?\s+to\s+merge|go\s+ahead|ship\s+it)\b/i
+
+const ATTRIBUTED_APPROVAL_SOURCE_PATTERN =
+  /(?:^|[。！？!?；;，,]\s*)(?!(?:i|we|my|our)\b)(?:@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,3})['’]s\s+(?:lgtm|approval|ok(?:ay)?\s+to\s+merge)\b|\b(?:lgtm|approval|approved?)\b[^.。！？!?\n]{0,20}\b(?:from|by)\s+(?!(?:me|us)\b)(?:@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,3})\b/i
+
 const THIRD_PARTY_APPROVAL_PATTERN =
   /\b(?:@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,3})\s+(?:has\s+|had\s+)?approved?\b|(?:(?:他|她|他们|她们|对方|第三方)|[\p{L}\p{N}_@.-]{2,}(?:\s+[\p{L}\p{N}_@.-]{2,}){0,3})[^。！？!?\n]{0,20}(?:同意|确认|允许)[^。！？!?\n]{0,16}(?:合并|merge)/iu
 
@@ -45,6 +51,9 @@ const PENDING_CONDITION =
 const STANDALONE_APPROVAL_CONDITION =
   /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b[^.。！？!?；;\n]{0,100}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|safe|healthy|done)\b|\bbefore\s+(?:merge|merging)\b|^(?:如果|若|待|等到|需要先|必须先|先)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|\b(?:must|needs?\s+to|has\s+to)\b[^。！？!?；;\n]{0,80}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|done|before\s+(?:merge|merging))\b/i
 
+const BARE_APPROVAL_CONDITION =
+  /\b(?:pending|subject\s+to|awaiting)\s+(?:an?\s+|the\s+)?(?:[\p{L}\p{N}_-]+[\s-]+){0,3}(?:review|approval|validation|sign[-\s]?off|audit|check)\b|(?:等待|有待|待|须经|需经)[^。！？!?；;\n]{0,24}(?:(?:安全|隐私|法务|发布|生产|迁移|维护者|owner|人工)[^。！？!?；;\n]{0,8})?(?:审查|审核|批准|确认|验证|签字|检查)/iu
+
 const CROSS_PR_PREREQUISITE =
   /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:this\s+)?(?:merge|merging)\b|\bbefore\s+(?:this\s+one|ours)\b|\bbefore\s+(?:(?:we|i|you|they|maintainers?|the\s+team)\s+(?:can\s+|may\s+|should\s+|will\s+)?merge\b|(?:we|i|you|they)\s+merge\b|(?:this|the\s+current)\s+(?:pr|pull\s+request)\s+(?:can\s+|may\s+|should\s+|will\s+)?(?:merge|be\s+merged)\b)|\b(?:fixed|resolved|completed|approved|green|ready|done|merged)\s+first\b|^(?:如果|若|待|等到)[^。！？!?；;\n]{0,100}|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿|合并)后|先[^。！？!?；;\n]{0,80}合并|(?:在)?(?:我们|我|维护者|团队)合并(?:本|当前)?(?:\s*PR)?前|(?:在)(?:本|当前|这个|我们的)(?:\s*PR|拉取请求)?\s*(?:合并)?\s*(?:之前|前)\s*(?:合并)?|才能(?:合并|merge)/i
 
@@ -56,6 +65,9 @@ const INDEPENDENT_FOLLOWUP_OFFER = [
 
 const NON_BLOCKING_PATTERN =
   /(?:不能|不会|不应(?:该)?|不得|不要)[^。！？!，,；;\n]{0,16}(?:阻塞|阻断|阻止|卡住|拦截)[^。！？!，,；;\n]{0,8}(?:合并|merge)|(?:不能|不会|不应(?:该)?|不得|不要)[^。！？!，,；;\n]{0,16}(?:阻塞|阻断|阻止|卡住|拦截)[，,]\s*(?:这个|该)?\s*(?:合并|merge)[^。！？!，,；;\n]{0,16}(?:安全|可以|允许|没问题|safe|okay|ok)|(?:不|未)(?:是|属于|构成|算作)[^。！？!，,；;\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!，,；;\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!，,；;\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b|\b(?:(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+)?(?:not|no\s+longer)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:stopped|ceased)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:do\s+not|don['’]t|should\s+not|shouldn['’]t|must\s+not|mustn['’]t)\s+block\s+(?:this\s+|the\s+)?merge\b/i
+
+const NEGATED_MERGE_SAFETY_PATTERN =
+  /(?:这个|该)?\s*(?:合并|merge)[^。！？!?\n]{0,16}(?:(?<!不是)(?<!并非)不(?:太|够)?(?:安全|可以|允许|行|合适)|无法(?:继续|合并)|有风险)|\b(?:this\s+|the\s+)?merge\b[^.。！？!?\n]{0,24}\b(?:is|remains?|looks?)\s+(?:not\s+(?:safe|okay|ok|allowed|ready)|(?<!not\s)unsafe)\b|\b(?:cannot|can['’]t|should\s+not|shouldn['’]t|must\s+not|mustn['’]t)\s+(?:proceed|merge)\b/i
 
 const RESOLVED_BLOCKER_PATTERN =
   /\b(?:merge|release|functionality)\s+blocker\b[^.。！？!?\n]{0,32}\b(?:is|was|has\s+been|had\s+been)\s+(?:already\s+|now\s+)?(?:fixed|resolved|cleared|removed)\b|\b(?:fixed|resolved|cleared|removed)\b[^.。！？!?\n]{0,32}\b(?:the\s+)?(?:merge|release|functionality)\s+blocker\b|(?:合并|发布|功能)(?:阻断|阻塞)[^。！？!?\n]{0,24}(?:已|已经|现已)(?:修复|解决|解除|清除)|(?:已|已经|现已)(?:修复|解决|解除|清除)[^。！？!?\n]{0,24}(?:合并|发布|功能)(?:阻断|阻塞)/i
@@ -124,7 +136,9 @@ function isIndependentFollowupOffer(text) {
 function isPendingReleaseCondition(text, prNumber) {
   const value = String(text || '')
   if (isIndependentFollowupOffer(value)) return false
-  if (!PENDING_CONDITION.test(value) && !STANDALONE_APPROVAL_CONDITION.test(value)) {
+  if (!PENDING_CONDITION.test(value)
+    && !STANDALONE_APPROVAL_CONDITION.test(value)
+    && !BARE_APPROVAL_CONDITION.test(value)) {
     return false
   }
   if (!referencesDifferentPr(value, prNumber)) return true
@@ -137,7 +151,10 @@ function isPendingReleaseCondition(text, prNumber) {
 
 function isAttributedOrQuotedApproval(text) {
   const value = String(text || '')
-  if (QUOTED_APPROVAL_PATTERN.test(value) || REPORTED_APPROVAL_PATTERN.test(value)) return true
+  if (QUOTED_APPROVAL_PATTERN.test(value)
+    || REPORTED_APPROVAL_PATTERN.test(value)
+    || DIRECT_THIRD_PARTY_RELEASE_PATTERN.test(value)
+    || ATTRIBUTED_APPROVAL_SOURCE_PATTERN.test(value)) return true
   if (FIRST_PERSON_APPROVAL_PATTERN.test(value)) return false
   return THIRD_PARTY_APPROVAL_PATTERN.test(value)
 }
@@ -148,7 +165,10 @@ function removePatternMatches(text, pattern) {
 }
 
 function withoutNonBlockingSignals(text) {
-  const value = removePatternMatches(text, NON_BLOCKING_PATTERN)
+  const source = String(text || '')
+  const value = NEGATED_MERGE_SAFETY_PATTERN.test(source)
+    ? source
+    : removePatternMatches(source, NON_BLOCKING_PATTERN)
   if (REACTIVATED_BLOCKER_PATTERN.test(value)
     && !NEGATED_REACTIVATION_PATTERN.test(value)) return value
   return removePatternMatches(value, RESOLVED_BLOCKER_PATTERN)

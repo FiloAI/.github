@@ -59,6 +59,54 @@ test('非 owner 作者不能自行用产品决定关闭 P0/P1', () => {
   assert.deepEqual(result.blockers, [{ severity: 'P1', reviewer: 'codex', at: Date.parse('2026-08-25T03:01:00Z') }])
 })
 
+test('by-design 产品取舍必须取得 reviewer 或 current-head owner 放行', () => {
+  for (const authorReply of [
+    'This is by design; no change needed.',
+    'This is expected behavior.',
+    'We will keep this as-is.',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({ authorReply })],
+    }).satisfied, false, authorReply)
+
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply,
+        reviewerReply: 'Accepted as a product trade-off; non-blocking.',
+      })],
+    }).satisfied, true, authorReply)
+
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({ authorReply })],
+      reviews: [{
+        login: 'zqchris', state: 'APPROVED', commit_id: head,
+        submitted_at: '2026-08-25T03:02:00Z',
+      }],
+    }).satisfied, true, authorReply)
+  }
+})
+
+test('否定 by-design 取舍并声明修复不会误触发产品决策门', () => {
+  for (const authorReply of [
+    'This is not by design; fixed and covered by tests.',
+    'This is not expected behavior; fixed and covered by tests.',
+    'We should not keep this as-is; fixed and covered by tests.',
+    'The expected behavior is restored; fixed and covered by tests.',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({ authorReply })],
+    }).satisfied, true, authorReply)
+  }
+})
+
 test('当前 head 的 owner 批准可以放行产品取舍', () => {
   for (const approval of [
     { reviews: [{ login: 'zqchris', state: 'APPROVED', commit_id: head, submitted_at: '2026-08-25T03:02:00Z' }] },

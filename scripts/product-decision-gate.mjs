@@ -13,6 +13,9 @@ const PRODUCT_DEFERRAL_PATTERN =
 const PRESENT_PROGRESSIVE_NO_CHANGE_PATTERN =
   /\b(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+not\s+(?:changing\s+(?:(?:this|it)|the\s+(?:issue|finding|behavio(?:u)?r))(?=$|[.。！？!?,，;；:\n]|\s+(?:in|here|now|before|after|until|because)\b)|making\s+(?:(?:this|that|the\s+requested)\s+)?change(?=$|[.。！？!?,，;；:\n]|\s+(?:in|here|now|before|after|until|because)\b))/i
 
+const AUTHOR_EXPLICIT_REFUSAL_PATTERN =
+  /\b(?:(?:i|we)\s+(?:refuse|decline)|(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:refusing|declining)|(?:i|we)\s+(?:have|had)\s+(?:refused|declined)|(?:i|we)['’]ve\s+(?:refused|declined))\s+(?:to\s+(?:(?:fix|address|resolve)\s+(?:(?:this|it)|the\s+(?:issue|finding|behavio(?:u)?r))|change\s+(?:(?:this|it)|the\s+(?:behavio(?:u)?r|implementation))|(?:make|implement)\s+(?:(?:this|that|the\s+requested|any)\s+changes?))|(?:this|that|the\s+requested)\s+changes?)(?=$|[.。！？!?,，;；:\n]|\s+(?:in|here|now|before|after|until|because)\b)/i
+
 const NEGATED_PRODUCT_DEFERRAL_PATTERN =
   /(?:不是|并非|并不是)\s*(?:产品(?:决定|决策|取舍)|不改|不修|暂不处理|超出(?:本\s*PR\s*)?范围)|\b(?:is\s+not|isn't|was\s+not|wasn't|not)\s+(?:a\s+)?(?:product\s+(?:decision|trade-?off)|by\s+design|expected\s+behavio(?:u)?r|out\s+of\s+scope|defer(?:red)?)\b|\b(?:do\s+not|don't|should\s+not|shouldn't|cannot|can't|won't|not)\s+keep(?:\s+(?:this|it))?\s+as[-\s]+is\b/gi
 
@@ -45,6 +48,9 @@ const REVIEWER_REJECTION_PATTERN =
 
 const QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN =
   /\b(?:(?:i\s+am|i['’]m|we\s+are|we['’]re|(?:you|they)\s+are|(?:you|they)['’]re|(?:he|she)\s+is)\s+(?:(?:currently|yet|still|now|at\s+this\s+time)\s+)?(?:unwilling|unable)\s+to\s+(?:accept|agree)|(?:i\s+am|i['’]m|we\s+are|we['’]re|(?:you|they)\s+are|(?:you|they)['’]re|(?:he|she)\s+is)\s+not\s+(?:(?:currently|yet|still|now|at\s+this\s+time)\s+)?(?:(?:willing|ready|prepared|able)\s+to\s+(?:accept|agree)|(?:accepting|agreeing)|in\s+(?:a\s+)?position\s+to\s+(?:accept|agree))|(?:do\s+not|don['’]t|cannot|can['’]t|will\s+not|won['’]t)\s+(?:(?:currently|yet|now|at\s+this\s+time)\s+)?(?:accept|agree))\b/i
+
+const INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN =
+  /\b(?:(?:i|we)\s+(?:(?:do|does)\s+not|don['’]t|doesn['’]t)\s+(?:think|believe|feel)\b[^.。！？!?；;\n]{0,64}\b(?:(?:(?:i|we|this|that|it)\s+)?(?:(?:should|can|could|would|will|may|might)\s+(?!(?:not|never)\b)(?:be\s+)?)?(?:accept(?:ed)?|agree(?:d)?)|(?:accepting|agreeing))|(?:i|we)\s+(?:(?:(?:do|does)\s+not|don['’]t|doesn['’]t|cannot|can['’]t)\s+see\s+(?:how|why)|(?:am|are)\s+not\s+convinced)\b[^.。！？!?；;\n]{0,64}\b(?:accept|agree)|(?:(?:there\s+is|there['’]s)|(?:i|we)\s+have)\s+no\s+(?:basis|reason|grounds?)\s+to\s+(?:accept|agree)|(?:i|we)\s+(?:(?:would|could|should|may|might)\s+not|wouldn['’]t|couldn['’]t|shouldn['’]t|mightn['’]t)\s+(?:(?:currently|yet|now|necessarily)\s+)?(?:(?:be\s+)?(?:willing|ready|prepared|able)\s+to\s+)?(?:accept|agree)|(?:i|we)\s+(?:would|could|can|may|might)\s+only\s+(?:accept|agree)|(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:not\s+(?:sure|certain|comfortable)|hesitant|reluctant)\b[^.。！？!?；;\n]{0,48}\b(?:accept|agree)|(?:i|we)\s+(?:would\s+)?hesitate\s+to\s+(?:accept|agree)|(?:i|we)\s+(?:(?:can|could|would|may|might)\s+)?(?:accept|agree)\b[^.。！？!?；;\n]{0,64}\b(?:only\s+if|if\s+(?!(?:useful|helpful|needed|desired|necessary)\b)|unless|provided(?:\s+that)?|as\s+long\s+as|once|after|when|subject\s+to|pending)\b|(?:if|unless|provided(?:\s+that)?|as\s+long\s+as|once|after|when|subject\s+to|pending)\b[^.。！？!?；;\n]{0,64}\b(?:i|we)\s+(?:(?:can|could|would|may|might)\s+)?(?:accept|agree))\b/i
 
 const REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN =
   /(?:反对|不赞成|不支持)[^。！？!?\n]{0,80}(?:延期|取舍|范围|另开|后续处理|单独处理|独立(?:问题|事项|处理))|\b(?:disagree(?:s|d|ing)?(?:\s+(?:that|with))?|oppos(?:e|es|ed|ing)|opposition\s+to|(?:am|is|are|was|were)\s+against|reject(?:s|ed|ing)?|object(?:s|ed|ing)?\s+to|(?:refus(?:e|es|ed|ing)|declin(?:e|es|ed|ing))\s+to\s+(?:accept|agree)|(?:refusal|declination)\s+to\s+(?:accept|agree))\b[^.。！？!?\n]{0,80}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr|handling|treatment)|(?:treat(?:ed|ing)?|handl(?:e|ing)|address(?:ed|ing)?)\b[^.。！？!?\n]{0,24}\bseparately)\b/i
@@ -239,6 +245,7 @@ function reviewerAcceptanceEvidence(body) {
         && !REVIEWER_ACCEPTANCE_UNCERTAINTY_PATTERN.test(part)
         && !REVIEWER_REJECTION_PATTERN.test(part)
         && !QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN.test(part)
+        && !INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN.test(part)
         && !NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(part)
     ))
     .join(' ')
@@ -260,6 +267,7 @@ function isExplicitReviewerRejection(body) {
   const value = String(body || '')
   return REVIEWER_REJECTION_PATTERN.test(value)
     || QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
+    || INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || (REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN.test(value)
       && !NEGATED_REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN.test(value))
     || NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(value)
@@ -362,6 +370,7 @@ function isProductDeferral(body) {
     .replace(NEGATED_INTENDED_BEHAVIOR_PATTERN, ' ')
   return PRODUCT_DEFERRAL_PATTERN.test(value)
     || PRESENT_PROGRESSIVE_NO_CHANGE_PATTERN.test(value)
+    || AUTHOR_EXPLICIT_REFUSAL_PATTERN.test(value)
     || INTENDED_BEHAVIOR_DEFERRAL_PATTERN.test(value)
     || (NO_CHANGE_DEFERRAL_PATTERN.test(value)
       && !NON_BEHAVIOR_NO_CHANGE_PATTERN.test(value))

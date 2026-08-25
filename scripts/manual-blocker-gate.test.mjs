@@ -191,8 +191,20 @@ test('approval 分句里的裸限定词在普通评论和 COMMENTED review 中�
     `LGTM ${headOid.slice(0, 7)} subject to the change freeze.`,
     `LGTM ${headOid.slice(0, 7)} pending the database migration.`,
     `LGTM ${headOid.slice(0, 7)} awaiting the maintenance window.`,
+    `LGTM ${headOid.slice(0, 7)}, but please wait for deployment.`,
+    `LGTM ${headOid.slice(0, 7)}, but hold until deployment.`,
+    `LGTM ${headOid.slice(0, 7)} if the change freeze ends.`,
+    `LGTM ${headOid.slice(0, 7)} unless the rollback is ready.`,
+    `LGTM ${headOid.slice(0, 7)} until the migration completes.`,
+    `LGTM ${headOid.slice(0, 7)} provided that production validation passes.`,
+    `LGTM ${headOid.slice(0, 7)} assuming the security review completes.`,
     `LGTM ${headOid.slice(0, 7)}，等到变更冻结结束。`,
     `LGTM ${headOid.slice(0, 7)}，在数据库迁移之后。`,
+    `LGTM ${headOid.slice(0, 7)}，如果变更冻结结束。`,
+    `LGTM ${headOid.slice(0, 7)}，若安全审查完成。`,
+    `LGTM ${headOid.slice(0, 7)}，除非回滚方案就绪。`,
+    `LGTM ${headOid.slice(0, 7)}，直到数据库迁移完成。`,
+    `LGTM ${headOid.slice(0, 7)}，只要生产验证通过。`,
   ]
 
   for (const source of ['comments', 'reviews']) {
@@ -253,6 +265,22 @@ test('approval 分句里的裸限定词在普通评论和 COMMENTED review 中�
       headOid,
       [source]: [priorBlock, directRelease],
     }).satisfied, true, `${source}: direct release`)
+
+    const independentFollowup = source === 'comments'
+      ? {
+          login: 'reviewer', permission: 'write',
+          body: `LGTM ${headOid.slice(0, 7)}, if useful, I can add docs in a follow-up.`,
+          created_at: '2026-08-24T00:01:00Z',
+        }
+      : {
+          login: 'reviewer', permission: 'write', state: 'COMMENTED',
+          body: `LGTM ${headOid.slice(0, 7)}, if useful, I can add docs in a follow-up.`,
+          commit_id: headOid, submitted_at: '2026-08-24T00:01:00Z',
+        }
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      [source]: [priorBlock, independentFollowup],
+    }).satisfied, true, `${source}: independent follow-up`)
   }
 })
 
@@ -500,6 +528,12 @@ test('疑问式 blocker mention 不会持久化为明确 veto', () => {
     'Could this be a functionality blocker?',
     '这是发布阻断吗？',
     '这算功能阻塞吗？',
+    'This may be a release blocker.',
+    'This could be a functionality blocker.',
+    'We are investigating whether this is a merge blocker.',
+    'This is potentially a release blocker.',
+    '这可能是发布阻断。',
+    '我们正在调查这是否属于功能阻塞。',
   ]) {
     assert.equal(evaluateManualBlockers({
       headOid,
@@ -516,6 +550,54 @@ test('疑问式 blocker mention 不会持久化为明确 veto', () => {
       }],
     }).satisfied, true, body)
   }
+})
+
+test('不确定 blocker 描述不会压过同句中的明确 veto', () => {
+  for (const body of [
+    'This may be a release blocker, so do not merge.',
+    'We are investigating whether this is a functionality blocker; block the merge until we know.',
+    '这可能是发布阻断，当前不要合并。',
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    }).satisfied, false, body)
+  }
+})
+
+test('不确定 blocker 片段不会吞掉同句中的确定 disposition', () => {
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    comments: [
+      {
+        login: 'maintainer',
+        permission: 'write',
+        created_at: '2026-08-25T00:00:00Z',
+        body: 'This may be a release blocker, but this is definitely a functionality blocker.',
+      },
+    ],
+  }).satisfied, false)
+
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    comments: [
+      {
+        login: 'maintainer',
+        permission: 'write',
+        created_at: '2026-08-25T00:00:00Z',
+        body: 'Do not merge.',
+      },
+      {
+        login: 'maintainer',
+        permission: 'write',
+        created_at: '2026-08-25T00:01:00Z',
+        body: `This may be a release blocker, but LGTM ${headOid.slice(0, 7)}.`,
+      },
+    ],
+  }).satisfied, true)
 })
 
 test('第三方未批准不覆盖评论者本人对当前 head 的明确批准', () => {
@@ -1105,6 +1187,7 @@ test('其它独立事项的 pending 措辞不会污染 current-head 放行', () 
     `I still need to update another PR. LGTM ${headOid.slice(0, 7)}.`,
     `LGTM ${headOid.slice(0, 7)}. I still need to update another PR.`,
     `LGTM ${headOid.slice(0, 7)}. If useful, I can add docs in a follow-up.`,
+    `If useful, I can add docs in a follow-up, LGTM ${headOid.slice(0, 7)}.`,
     `I can add docs in a follow-up if useful. LGTM ${headOid.slice(0, 7)}.`,
     `LGTM ${headOid.slice(0, 7)}。如果有需要，我可以后续补充文档。`,
   ]) {

@@ -37,7 +37,7 @@ const DIRECT_THIRD_PARTY_RELEASE_PATTERN =
   /(?:^|[。！？!?；;，,]\s*)(?!(?:i|we)\b)(?:@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,3})\s*(?::|：|\b(?:gave|gives|left|posted|provided)\b)\s*(?:an?\s+)?(?:lgtm|approved?|approval|ok(?:ay)?\s+to\s+merge|go\s+ahead|ship\s+it)\b/i
 
 const BARE_ACTOR_RELEASE_PATTERN =
-  /(?:^|[。！？!?；;，,]\s*)(?!(?:I|We|i|we|my|our|strongly|definitely|personally|fully|clearly|overall)\b)(?:@[A-Za-z0-9_.-]+|[A-Za-z][A-Za-z0-9_.-]*(?:\s+[A-Z][A-Za-z0-9_.-]*){0,3})\s+[Ll][Gg][Tt][Mm]\b/u
+  /(?:^|[。！？!?；;，,]\s*)(?!(?:I|We|i|we|my|our|but|however|yet|and|so|then|strongly|definitely|personally|fully|clearly|overall)\b)(?:@[A-Za-z0-9_.-]+|[A-Za-z][A-Za-z0-9_.-]*(?:\s+[A-Z][A-Za-z0-9_.-]*){0,3})\s+[Ll][Gg][Tt][Mm]\b/u
 
 const ATTRIBUTED_APPROVAL_SOURCE_PATTERN =
   /(?:^|[。！？!?；;，,]\s*)(?!(?:i|we|my|our)\b)(?:@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,3})['’]s\s+(?:lgtm|approval|ok(?:ay)?\s+to\s+merge)\b|\b(?:lgtm|approval|approved?)\b[^.。！？!?\n]{0,20}\b(?:from|by)\s+(?!(?:me|us)\b)(?:@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,3})\b/i
@@ -47,6 +47,9 @@ const THIRD_PARTY_APPROVAL_PATTERN =
 
 const CLAUSE_UNCERTAINTY =
   /[?？]|(?:吗|么|呢|吧)(?:$|[\s。！？!?，,；;])/i
+
+const BLOCKER_UNCERTAINTY =
+  /\b(?:may|might|could)\s+be\s+(?:an?\s+)?(?:merge|release|functionality)\s+blocker\b|\b(?:is|are)\s+(?:possibly|potentially)\s+(?:an?\s+)?(?:merge|release|functionality)\s+blocker\b|\b(?:investigat(?:e|es|ed|ing)|check(?:ing)?|assess(?:ing)?|determin(?:e|ing)|not\s+sure|unclear)\b[^.。！？!?\n]{0,64}\b(?:merge|release|functionality)\s+blocker\b|(?:可能|也许|或许|疑似|尚不确定|不确定|正在(?:调查|排查|确认|评估))[^。！？!?\n]{0,40}(?:合并|发布|功能)(?:阻断|阻塞)/i
 
 const PENDING_CONDITION =
   /(?:不同意|不确认|不允许|不批准|未批准|未签字|没有签字|尚未签字|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不|(?:应|应该|应当)[^。！？!?；;\n]{0,24}(?:签字|确认|批准)|(?:如果|若)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|(?:仍|还|尚)(?:然)?(?:未|没)(?:修复|解决|完成|通过|验证|批准|签字|就绪)|(?:验证|审查|检查|迁移|发布)[^。！？!?；;\n]{0,24}(?:仍|还|尚)?(?:未|没)(?:修复|解决|完成|通过))|\b(?:not\s+approved?|not\s+signed\s+off|has(?:n't|\s+not)\s+signed\s+off|do\s+not\s+approve|don't\s+approve|need(?:s|ed)?\s+to|must|before)\b|\b(?:should|ought\s+to)\s+(?:still\s+)?(?:sign\s*off|approve)\b|\b(?:is|are|remain(?:s)?)\s+(?:still\s+)?(?:broken|unfinished|incomplete|failing|unsafe|outstanding|not\s+(?:fixed|resolved|complete|completed|validated|approved|ready))\b|\bstill\s+(?:a\s+)?(?:merge\s+|release\s+|functionality\s+)?blocker\b|\b(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b[^.。！？!?；;\n]{0,100}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|safe|healthy|done)\b/i
@@ -58,7 +61,7 @@ const BARE_APPROVAL_CONDITION =
   /\b(?:pending|subject\s+to|awaiting)\b|(?:等待|有待|待|须经|需经)[^。！？!?；;\n]{0,24}(?:(?:安全|隐私|法务|发布|生产|迁移|维护者|owner|人工)[^。！？!?；;\n]{0,8})?(?:审查|审核|批准|确认|验证|签字|检查)/iu
 
 const APPROVAL_CLAUSE_QUALIFIER =
-  /\b(?:once|after|when|before|subject\s+to|pending|awaiting)\b|(?:一旦|等到|等待)|(?:在)?[^。！？!?；;，,\n]{1,40}(?:之后|以前|之前)/iu
+  /\b(?:once|after|when|before|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending|awaiting)\b|\b(?:but\s+)?(?:please\s+)?(?:wait\s+(?:for|until)|hold(?:\s+off)?\s+(?:for|until))\b|(?:一旦|等到|等待|如果|若|除非|直到|只要)|(?:在)?[^。！？!?；;，,\n]{1,40}(?:之后|以前|之前)/iu
 
 const CROSS_PR_PREREQUISITE =
   /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:this\s+)?(?:merge|merging)\b|\bbefore\s+(?:this\s+one|ours)\b|\bbefore\s+(?:(?:we|i|you|they|maintainers?|the\s+team)\s+(?:can\s+|may\s+|should\s+|will\s+)?merge\b|(?:we|i|you|they)\s+merge\b|(?:this|the\s+current)\s+(?:pr|pull\s+request)\s+(?:can\s+|may\s+|should\s+|will\s+)?(?:merge|be\s+merged)\b)|\b(?:fixed|resolved|completed|approved|green|ready|done|merged)\s+first\b|^(?:如果|若|待|等到)[^。！？!?；;\n]{0,100}|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿|合并)后|先[^。！？!?；;\n]{0,80}合并|(?:在)?(?:我们|我|维护者|团队)合并(?:本|当前)?(?:\s*PR)?前|(?:在)(?:本|当前|这个|我们的)(?:\s*PR|拉取请求)?\s*(?:合并)?\s*(?:之前|前)\s*(?:合并)?|才能(?:合并|merge)/i
@@ -135,7 +138,7 @@ function referencesDifferentPr(text, prNumber) {
 }
 
 function isIndependentFollowupOffer(text) {
-  const value = String(text || '').trim()
+  const value = String(text || '').trim().replace(/[，,；;:.：。]+$/, '').trim()
   return INDEPENDENT_FOLLOWUP_OFFER.some((pattern) => pattern.test(value))
 }
 
@@ -157,7 +160,20 @@ function isPendingReleaseCondition(text, prNumber) {
 
 function hasBareApprovalQualifier(text) {
   const value = String(text || '')
-  return APPROVAL_PATTERN.test(value) && APPROVAL_CLAUSE_QUALIFIER.test(value)
+  const approval = value.match(APPROVAL_PATTERN)
+  if (!approval) return false
+  const fragments = [
+    value.slice(0, approval.index),
+    value.slice((approval.index || 0) + approval[0].length)
+      .replace(/^\s*[0-9a-f]{7,40}\b/i, '')
+      .replace(/^[\s，,.:：；;-]+/, ''),
+  ]
+    .map((fragment) => fragment.trim())
+    .filter(Boolean)
+  return fragments.some((fragment) => (
+    !isIndependentFollowupOffer(fragment)
+      && APPROVAL_CLAUSE_QUALIFIER.test(fragment)
+  ))
 }
 
 function isAttributedOrQuotedApproval(text) {
@@ -186,6 +202,10 @@ function withoutNonBlockingSignals(text) {
   return removePatternMatches(value, RESOLVED_BLOCKER_PATTERN)
 }
 
+function withoutSpeculativeBlockerSignals(text) {
+  return removePatternMatches(text, BLOCKER_UNCERTAINTY)
+}
+
 function classifyTextIntent(body, headOid, prNumber) {
   if (STEWARD_MARKERS.some((marker) => String(body || '').includes(marker))) return null
   const clauses = clausesFrom(body)
@@ -199,7 +219,9 @@ function classifyTextIntent(body, headOid, prNumber) {
     const approvalNegation = APPROVAL_NEGATION_PATTERN.test(commenterClause)
       && (referencesHead(commenterClause, headOid) || /(?:合并|\bmerge\b)/i.test(commenterClause))
 
-    const blockableClause = withoutNonBlockingSignals(commenterClause)
+    const blockableClause = withoutNonBlockingSignals(
+      withoutSpeculativeBlockerSignals(commenterClause),
+    )
     const explicitVeto = approvalNegation
       || EXPLICIT_VETO_PATTERN.test(blockableClause)
       || ACTIVE_MERGE_VETO_PATTERN.test(blockableClause)

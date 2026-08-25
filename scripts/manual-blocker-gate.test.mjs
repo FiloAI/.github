@@ -417,6 +417,14 @@ test('否认存在 merge blocker 的说明不是阻止', () => {
   for (const body of [
     'No merge blockers',
     'No merge blocker found',
+    'This is not a release blocker.',
+    "This isn't a functionality blocker!",
+    'There is no release blocker.',
+    'There is no known release blocker.',
+    "There aren't any functionality blockers.",
+    'This does not constitute a release blocker.',
+    "That doesn't constitute a functionality blocker!",
+    'NO RELEASE BLOCKER;',
     '没有合并阻塞',
     '未发现 merge blocker',
     'Cursor 风险评级不能单独阻塞合并',
@@ -435,6 +443,43 @@ test('否认存在 merge blocker 的说明不是阻止', () => {
         created_at: '2026-08-24T00:00:00Z',
       }],
     }).satisfied, true, body)
+  }
+})
+
+test('否定 blocker 名词不会吞掉同句中的真实阻止', () => {
+  for (const body of [
+    'This is not a release blocker, but this is a functionality blocker.',
+    'There is no functionality blocker; however, do not merge.',
+    'There is no known release blocker, but this is a functionality blocker.',
+    'This does not constitute a release blocker; however, do not merge.',
+  ]) {
+    for (const source of ['comments', 'reviews']) {
+      const event = source === 'comments'
+        ? { login: 'reviewer', permission: 'write', body, created_at: '2026-08-24T00:00:00Z' }
+        : {
+            login: 'reviewer', permission: 'write', state: 'COMMENTED', body,
+            commit_id: headOid, submitted_at: '2026-08-24T00:00:00Z',
+          }
+      assert.equal(evaluateManualBlockers({
+        headOid,
+        [source]: [event],
+      }).satisfied, false, `${source}: ${body}`)
+    }
+  }
+})
+
+test('肯定的 release/functionality blocker 仍保持 fail-closed', () => {
+  for (const body of [
+    'This is a release blocker.',
+    'There is a functionality blocker.',
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    }).satisfied, false, body)
   }
 })
 

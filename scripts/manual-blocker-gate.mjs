@@ -15,8 +15,11 @@ const EXPLICIT_VETO_PATTERN =
 const APPROVAL_PATTERN =
   /(?:同意|确认|允许)(?:这个|该)?(?:\s*pr)?(?:可以)?(?:直接)?合并|可以(?:直接)?合并|(?:代码)?(?:审查|审核)(?:已经|已)?通过(?:了)?|\b(?:lgtm|approved?|ok(?:ay)?\s+to\s+merge|please\s+merge|merge\s+it|go\s+ahead|ship\s+it)\b/i
 
-const UNCERTAIN_OR_PENDING =
-  /[?？]|(?:不同意|不确认|不允许|不批准|未批准|不过|但是|但|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不)|\b(?:not\s+approved?|do\s+not\s+approve|don't\s+approve|but|however|still|need(?:s|ed)?\s+to|must|before|once|after|when)\b/i
+const CLAUSE_UNCERTAINTY =
+  /[?？]|(?:吗|么|呢|吧)(?:$|[\s。！？!?，,；;])/i
+
+const PENDING_CONDITION =
+  /(?:不同意|不确认|不允许|不批准|未批准|不过|但是|但|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不)|\b(?:not\s+approved?|do\s+not\s+approve|don't\s+approve|but|however|still|need(?:s|ed)?\s+to|must|before|once)\b/i
 
 const NON_BLOCKING_PATTERN =
   /(?:不能|不会|不应|不得)[^。！？!\n]{0,16}(?:阻塞|阻断|卡住|拦截)[^。！？!\n]{0,8}(?:合并|merge)|(?:不|未)(?:是|属于|构成|算作)[^。！？!\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b/i
@@ -54,22 +57,30 @@ function classifyTextIntent(body, headOid) {
   if (STEWARD_MARKERS.some((marker) => String(body || '').includes(marker))) return null
   let intent = null
   let sawBlock = false
-  let openCondition = false
+  let sawPendingCondition = false
   for (const clause of clausesFrom(body)) {
-    if (UNCERTAIN_OR_PENDING.test(clause)) openCondition = true
+    const pendingCondition = PENDING_CONDITION.test(clause)
+    if (pendingCondition) sawPendingCondition = true
 
-    if (EXPLICIT_VETO_PATTERN.test(clause)
+    const explicitBlock = EXPLICIT_VETO_PATTERN.test(clause)
       || (!NON_BLOCKING_PATTERN.test(clause)
-        && BLOCK_PATTERNS.some((pattern) => pattern.test(clause)))) {
+        && BLOCK_PATTERNS.some((pattern) => pattern.test(clause)))
+    if (explicitBlock) {
       intent = 'block'
       sawBlock = true
     }
-    if (APPROVAL_PATTERN.test(clause)
+
+    // A veto in the same clause always wins. Questions and conditional
+    // approvals are not an explicit current-head release.
+    if (!explicitBlock
+      && !CLAUSE_UNCERTAINTY.test(clause)
+      && !pendingCondition
+      && APPROVAL_PATTERN.test(clause)
       && referencesHead(clause, headOid)) {
       intent = 'release'
     }
   }
-  if (intent === 'release' && openCondition) return sawBlock ? 'block' : null
+  if (intent === 'release' && sawPendingCondition) return sawBlock ? 'block' : null
   return intent
 }
 

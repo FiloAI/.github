@@ -349,6 +349,7 @@ test('同一条消息的显式 veto 不会被后续条件性放行覆盖', () =>
 test('疑问式放行不能解除人工阻止', () => {
   for (const body of [
     `可以合并 ${headOid.slice(0, 7)} 吗？`,
+    `可以合并 ${headOid.slice(0, 7)} 吗`,
     `OK to merge ${headOid.slice(0, 7)}?`,
   ]) {
     const result = evaluateManualBlockers({
@@ -367,4 +368,39 @@ test('疑问式放行不能解除人工阻止', () => {
     assert.equal(result.satisfied, false, body)
     assert.deepEqual(result.blockers, ['reviewer'], body)
   }
+})
+
+test('同一分句的显式 veto 优先于 current-head approval', () => {
+  for (const body of [
+    `LGTM ${headOid.slice(0, 7)} for the tests — do not merge.`,
+    `审核通过 ${headOid.slice(0, 7)}，但当前不要合并。`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    })
+    assert.equal(result.satisfied, false, body)
+    assert.deepEqual(result.blockers, ['reviewer'], body)
+  }
+})
+
+test('无关疑问不会污染独立的 current-head 放行', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    comments: [
+      {
+        login: 'reviewer', permission: 'write', body: 'Do not merge.',
+        created_at: '2026-08-24T00:00:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write',
+        body: `LGTM ${headOid.slice(0, 7)}. What happens after deployment?`,
+        created_at: '2026-08-24T00:01:00Z',
+      },
+    ],
+  })
+  assert.equal(result.satisfied, true)
 })

@@ -1796,6 +1796,9 @@ test('普通以后修措辞属于产品取舍延期', () => {
   for (const authorReply of [
     '这个问题会在后续修复。',
     '将在下个 PR 修复。',
+    '这个问题将由下一个 PR 解决。',
+    '未来会处理这个问题。',
+    '稍后会修复这个问题。',
     'I will fix this later.',
   ]) {
     const result = evaluateProductDecisionGate({
@@ -1804,6 +1807,31 @@ test('普通以后修措辞属于产品取舍延期', () => {
       threads: [thread({ authorReply })],
     })
     assert.equal(result.satisfied, false, authorReply)
+  }
+})
+
+test('中文当前 PR 的 future-fix 表述不是产品延期', () => {
+  for (const authorReply of [
+    '本 PR 会修复这个问题，已经补了测试。',
+    '这个问题将在本 PR 解决，已经修复并补了测试。',
+    '这个问题会修复，已补测试。',
+  ]) {
+    const withoutConfirmation = evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({ authorReply })],
+    })
+    assert.equal(withoutConfirmation.satisfied, true, authorReply)
+    assert.equal(Boolean(withoutConfirmation.needsOwnerReview), false, authorReply)
+
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply,
+        reviewerReply: '确认已经修复。',
+      })],
+    }).satisfied, true, authorReply)
   }
 })
 
@@ -1956,6 +1984,13 @@ test('not going to fix 或 address 是明确产品取舍延期', () => {
     'I will not resolve this in this PR.',
     'We do not plan to address this.',
     'We have no plans to fix this.',
+    "We won't be fixing this.",
+    'We will not be addressing this.',
+    'WE WILL NOT BE RESOLVING THIS.',
+    "I'm not going to be fixing this.",
+    'We do not plan to be addressing this.',
+    'We have no plans to be resolving this.',
+    'This will not be fixed in this PR.',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,
@@ -1970,6 +2005,20 @@ test('not going to fix 或 address 是明确产品取舍延期', () => {
         authorReply,
         reviewerReply: 'Accepted as a separate concern; non-blocking.',
       })],
+    }).satisfied, true, authorReply)
+  }
+})
+
+test('积极进行中的当前修复不是 no-fix disposition', () => {
+  for (const authorReply of [
+    'We will be fixing this in this PR.',
+    'We are addressing this now.',
+    'We plan to be resolving this here.',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({ authorReply })],
     }).satisfied, true, authorReply)
   }
 })

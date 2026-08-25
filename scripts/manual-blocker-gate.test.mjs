@@ -1129,6 +1129,7 @@ test('无关的部署后说明不会压制当前 head 无条件放行', () => {
   for (const body of [
     `LGTM ${headOid.slice(0, 7)}. When deployed, this will reduce latency.`,
     `LGTM ${headOid.slice(0, 7)}. After deployment, users will see lower latency.`,
+    `LGTM ${headOid.slice(0, 7)}. When this PR merges, the dashboard refreshes.`,
     `可以合并 ${headOid.slice(0, 7)}。上线后延迟会降低。`,
   ]) {
     const result = evaluateManualBlockers({

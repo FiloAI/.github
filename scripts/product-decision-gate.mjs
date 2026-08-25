@@ -91,20 +91,33 @@ function isCosmeticEdit(left, right) {
   return editDistanceWithin(compactLeft, compactRight, limit)
 }
 
-function hasSemanticDispositionEdit(comment) {
+function editTexts(comment) {
+  return (comment?.edits || [])
+    .map((edit) => String(edit?.body ?? edit?.diff ?? ''))
+    .filter(Boolean)
+}
+
+function isLikelyPatchFragment(value, currentBody, dispositionKind) {
+  if (dispositionKind(value)) return false
+  const compactValue = compactEditText(value)
+  const compactCurrent = compactEditText(currentBody)
+  return compactValue.length < Math.max(8, Math.floor(compactCurrent.length * 0.5))
+}
+
+function hasSemanticDispositionEdit(comment, dispositionKind) {
   const createdAt = dispositionTime(comment)
   const updatedAt = commentTime(comment)
   if (!updatedAt || updatedAt <= createdAt) return false
   if (comment?.edits_complete === false) return true
-  const versions = (comment?.edits || [])
-    .map((edit) => String(edit?.body ?? edit?.diff ?? ''))
-    .filter(Boolean)
-  if (versions.length < 2) return true
-  return versions.some((body) => !isCosmeticEdit(body, comment.body))
-}
-
-function authorDispositionTime(comment) {
-  return hasSemanticDispositionEdit(comment) ? commentTime(comment) : dispositionTime(comment)
+  const currentBody = String(comment?.body || '')
+  const currentKind = dispositionKind(currentBody)
+  const versions = editTexts(comment)
+  if (versions.length === 0) return true
+  return versions.some((body) => {
+    if (isCosmeticEdit(body, currentBody)) return false
+    if (isLikelyPatchFragment(body, currentBody, dispositionKind)) return false
+    return dispositionKind(body) !== currentKind || compactEditText(body) !== compactEditText(currentBody)
+  })
 }
 
 function isExplicitReviewerAcceptance(body) {
@@ -122,6 +135,40 @@ function reviewerAcceptanceKind(body) {
 
 function isExplicitReviewerRejection(body) {
   return REVIEWER_REJECTION_PATTERN.test(String(body || ''))
+}
+
+function reviewerDispositionKind(body) {
+  if (isExplicitReviewerRejection(body)) return 'reject'
+  return reviewerAcceptanceKind(body) ? 'accept' : null
+}
+
+function reviewerDispositionTime(comment) {
+  if (!hasSemanticDispositionEdit(comment, reviewerDispositionKind)) {
+    return dispositionTime(comment)
+  }
+  if (reviewerDispositionKind(comment.body) === 'reject') return commentTime(comment)
+  return comment?.edits_complete !== false && editTexts(comment).length > 0
+    ? commentTime(comment)
+    : dispositionTime(comment)
+}
+
+function authorDispositionEvents(comment, index) {
+  const currentKind = authorDispositionKind(comment.body)
+  const historicalDeferral = editTexts(comment).some((body) => isProductDeferral(body))
+    || (comment?.edits_complete === false && commentTime(comment) > dispositionTime(comment))
+  const semanticEdit = hasSemanticDispositionEdit(comment, authorDispositionKind)
+  const at = semanticEdit ? commentTime(comment) : dispositionTime(comment)
+
+  if (currentKind === 'deferral') return [{ kind: 'deferral', index, at, strictAfter: semanticEdit }]
+  if (!historicalDeferral) {
+    return currentKind ? [{ kind: currentKind, index, at, strictAfter: semanticEdit }] : []
+  }
+
+  const deferralAt = currentKind ? dispositionTime(comment) : at
+  return [
+    { kind: 'deferral', index, at: deferralAt, strictAfter: !currentKind && semanticEdit },
+    ...(currentKind ? [{ kind: currentKind, index, at, strictAfter: semanticEdit }] : []),
+  ]
 }
 
 function isProductDeferral(body) {
@@ -193,7 +240,7 @@ export function normalizeProductDecisionThread(thread) {
       review_id: comment.pullRequestReview?.databaseId || null,
       edits: (comment.userContentEdits?.nodes || []).map((edit) => ({
         edited_at: edit.editedAt,
-        body: edit.diff || '',
+        diff: edit.diff || '',
       })),
       edits_complete: comment.userContentEdits?.pageInfo?.hasNextPage !== true,
     })),
@@ -228,6 +275,7 @@ function latestReviewerDisposition({
   afterIndex,
   highFindingAt,
   evidenceAt,
+  evidenceStrictAfter,
   reviews,
   headOid,
 }) {
@@ -239,7 +287,7 @@ function latestReviewerDisposition({
 
   for (const [offset, comment] of thread.comments.slice(afterIndex + 1).entries()) {
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
-    const at = dispositionTime(comment)
+    const at = reviewerDispositionTime(comment)
     if (isExplicitReviewerRejection(comment.body)) {
       if (at >= originalBoundary) {
         dispositions.push({
@@ -251,7 +299,7 @@ function latestReviewerDisposition({
       }
     } else {
       const acceptanceKind = reviewerAcceptanceKind(comment.body)
-      if (acceptanceKind && at >= effectiveBoundary) {
+      if (acceptanceKind && (evidenceStrictAfter ? at > effectiveBoundary : at >= effectiveBoundary)) {
         dispositions.push({
           disposition: 'accept', at,
           source: 'thread',
@@ -350,15 +398,8 @@ export function evaluateProductDecisionGate({
       .filter(({ comment, index }) => (
         index > findingStartIndex
           && String(comment.login || '').toLowerCase() === author
-          && (isProductDeferral(comment.body)
-            || isFindingFixedClaim(comment.body)
-            || isFindingFixRetraction(comment.body))
       ))
-      .map(({ comment, index }) => ({
-        kind: authorDispositionKind(comment.body),
-        index,
-        at: authorDispositionTime(comment),
-      }))
+      .flatMap(({ comment, index }) => authorDispositionEvents(comment, index))
       .sort((left, right) => left.at - right.at || left.index - right.index)
 
     const latestDeferral = authorEvents.filter((event) => event.kind === 'deferral').at(-1)
@@ -371,6 +412,7 @@ export function evaluateProductDecisionGate({
       afterIndex: evidenceEvent.index,
       highFindingAt,
       evidenceAt: evidenceEvent.at,
+      evidenceStrictAfter: evidenceEvent.strictAfter,
       reviews,
       headOid,
     })

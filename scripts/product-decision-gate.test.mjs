@@ -37,6 +37,10 @@ test('live GitHub 字段归一化保留 created/updated 时间', () => {
       author: { login: 'author' }, body: 'out of scope',
       createdAt: '2026-08-25T03:00:00Z', updatedAt: '2026-08-25T03:02:00Z',
       pullRequestReview: { databaseId: 1234 },
+      userContentEdits: {
+        pageInfo: { hasNextPage: false },
+        nodes: [{ editedAt: '2026-08-25T03:02:00Z', diff: 'out of scope' }],
+      },
     }] },
   }), {
     is_resolved: true, is_outdated: false, resolved_by: 'codex',
@@ -44,7 +48,7 @@ test('live GitHub 字段归一化保留 created/updated 时间', () => {
       login: 'author', body: 'out of scope',
       created_at: '2026-08-25T03:00:00Z', updated_at: '2026-08-25T03:02:00Z',
       review_id: 1234,
-      edits: [],
+      edits: [{ edited_at: '2026-08-25T03:02:00Z', diff: 'out of scope' }],
       edits_complete: true,
     }],
   })
@@ -219,6 +223,30 @@ test('reviewer 最新相关 disposition 覆盖较早接受', () => {
         submitted_at: '2026-08-25T03:03:00Z',
       },
     ],
+  }).satisfied, false)
+})
+
+test('reviewer 把旧 acceptance 编辑为更新 rejection 时按有效编辑时间阻塞', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'This remains a blocker.',
+  })
+  candidate.comments[2] = {
+    ...candidate.comments[2],
+    updated_at: '2026-08-25T03:04:00Z',
+    edits: [{
+      edited_at: '2026-08-25T03:04:00Z',
+      diff: 'Accepted as a separate concern; non-blocking.',
+    }],
+  }
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
   }).satisfied, false)
 })
 
@@ -794,6 +822,127 @@ test('deferral 的错字或格式编辑不会清除已有 acceptance', () => {
       { body: 'Out of scope; defer to a follow-up PR.' },
     ],
   }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+
+  candidate.comments[1] = {
+    ...candidate.comments[1],
+    body: '**Out of scpoe** — defer to a follow-up PR.',
+    updated_at: '2026-08-25T03:04:00Z',
+    edits: [{ edited_at: '2026-08-25T03:04:00Z', diff: '**' }],
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
+test('作者编辑删除 deferral 措辞仍保留产品取舍门', () => {
+  const candidate = thread({
+    authorReply: 'Clarified the reply.',
+    reviewerReply: null,
+  })
+  candidate.comments[1] = {
+    ...candidate.comments[1],
+    updated_at: '2026-08-25T03:03:00Z',
+    edits: [{
+      edited_at: '2026-08-25T03:03:00Z',
+      diff: 'Out of scope; defer to a follow-up PR.',
+    }],
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:04:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
+test('生产形状的 UserContentEdit.diff 保留被删除的 deferral 历史', () => {
+  const normalized = normalizeProductDecisionThread({
+    isResolved: true,
+    isOutdated: false,
+    resolvedBy: { login: 'author' },
+    comments: { nodes: [
+      {
+        author: { login: 'codex' },
+        body: '![P1 Badge] P1 behavior regression',
+        createdAt: '2026-08-25T03:00:00Z',
+        updatedAt: '2026-08-25T03:00:00Z',
+        pullRequestReview: null,
+        userContentEdits: { pageInfo: { hasNextPage: false }, nodes: [] },
+      },
+      {
+        author: { login: 'author' },
+        body: 'Clarified the reply.',
+        createdAt: '2026-08-25T03:01:00Z',
+        updatedAt: '2026-08-25T03:03:00Z',
+        pullRequestReview: null,
+        userContentEdits: {
+          pageInfo: { hasNextPage: false },
+          nodes: [
+            { editedAt: '2026-08-25T03:03:00Z', diff: 'Clarified the reply.' },
+            { editedAt: '2026-08-25T03:01:00Z', diff: 'Out of scope; defer to a follow-up PR.' },
+          ],
+        },
+      },
+    ] },
+  })
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [normalized],
+  }).satisfied, false)
+
+  normalized.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:04:00Z', updated_at: '2026-08-25T03:04:00Z',
+    review_id: null, edits: [], edits_complete: true,
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [normalized],
+  }).satisfied, true)
+})
+
+test('作者语义编辑后的同秒 thread acceptance 无法证明后置时保持阻塞', () => {
+  const candidate = thread({
+    authorReply: 'This is a broader product trade-off; defer it to a follow-up PR.',
+  })
+  candidate.comments[1] = {
+    ...candidate.comments[1],
+    updated_at: '2026-08-25T03:03:00Z',
+    edits: [{
+      edited_at: '2026-08-25T03:03:00Z',
+      diff: 'Out of scope; defer to a follow-up PR.',
+    }],
+  }
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.at(-1).created_at = '2026-08-25T03:03:01Z'
   assert.equal(evaluateProductDecisionGate({
     headOid: head,
     authorLogin: 'author',

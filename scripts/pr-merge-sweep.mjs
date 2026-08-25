@@ -23,6 +23,10 @@
 // 合并方式：bot 作者 squash，人类作者 merge commit（与 frontend 既有约定一致）。
 
 import { execFileSync } from 'node:child_process'
+import {
+  isAutomatedAccount,
+  isConfirmedMissingCollaborator,
+} from './collaborator-permission.mjs'
 import { flattenPaginatedPages } from './github-pagination.mjs'
 import { classifyHighRisk, evaluateHighRiskApproval } from './high-risk-review-gate.mjs'
 import {
@@ -176,7 +180,7 @@ function collaboratorPermission(repo, login) {
     return permission
   } catch (error) {
     const detail = String(error?.stderr || error?.message || error || '')
-    if (/HTTP 404|\bNot Found\b|is not a user/i.test(detail)) {
+    if (isConfirmedMissingCollaborator(error)) {
       permissionCache.set(key, null)
       return null
     }
@@ -188,26 +192,39 @@ function manualBlockerGate(repo, pr) {
   try {
     const reviews = ghJsonPaginated([
       'api', `repos/${repo}/pulls/${pr.number}/reviews`,
-    ]).map((review) => ({
-      login: review.user?.login || '',
-      is_bot: review.user?.type === 'Bot' || /(?:\[bot\]$|^cursor$|^chatgpt-codex-connector$|^greptile)/i.test(review.user?.login || ''),
-      permission: collaboratorPermission(repo, review.user?.login || ''),
-      state: review.state || '',
-      body: review.body || '',
-      commit_id: review.commit_id || '',
-      submitted_at: review.submitted_at,
-    }))
+    ]).map((review) => {
+      const login = review.user?.login || ''
+      const isBot = isAutomatedAccount(review.user)
+      return {
+        login,
+        is_bot: isBot,
+        permission: isBot ? null : collaboratorPermission(repo, login),
+        state: review.state || '',
+        body: review.body || '',
+        commit_id: review.commit_id || '',
+        submitted_at: review.submitted_at,
+      }
+    })
     const comments = ghJsonPaginated([
       'api', `repos/${repo}/issues/${pr.number}/comments`,
-    ]).map((comment) => ({
-      login: comment.user?.login || '',
-      is_bot: comment.user?.type === 'Bot' || /(?:\[bot\]$|^cursor$|^chatgpt-codex-connector$|^greptile)/i.test(comment.user?.login || ''),
-      permission: collaboratorPermission(repo, comment.user?.login || ''),
-      body: comment.body || '',
-      created_at: comment.created_at,
-      updated_at: comment.updated_at,
-    }))
-    return evaluateManualBlockers({ headOid: pr.headRefOid, reviews, comments })
+    ]).map((comment) => {
+      const login = comment.user?.login || ''
+      const isBot = isAutomatedAccount(comment.user)
+      return {
+        login,
+        is_bot: isBot,
+        permission: isBot ? null : collaboratorPermission(repo, login),
+        body: comment.body || '',
+        created_at: comment.created_at,
+        updated_at: comment.updated_at,
+      }
+    })
+    return evaluateManualBlockers({
+      headOid: pr.headRefOid,
+      prNumber: pr.number,
+      reviews,
+      comments,
+    })
   } catch (error) {
     return {
       satisfied: false,

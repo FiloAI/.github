@@ -412,3 +412,49 @@ test('无关疑问不会污染独立的 current-head 放行', () => {
     assert.equal(result.satisfied, true, body)
   }
 })
+
+test('任意条件谓词都不能解除人工阻止', () => {
+  for (const body of [
+    `LGTM ${headOid.slice(0, 7)} after the rollout is green`,
+    `LGTM ${headOid.slice(0, 7)} after Alice signs off`,
+    `LGTM ${headOid.slice(0, 7)} once security review succeeds`,
+    `LGTM ${headOid.slice(0, 7)} provided that staging remains healthy`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    })
+    assert.equal(result.satisfied, false, body)
+  }
+})
+
+test('其它独立事项的 pending 措辞不会污染 current-head 放行', () => {
+  for (const body of [
+    `I still need to update another PR. LGTM ${headOid.slice(0, 7)}.`,
+    `LGTM ${headOid.slice(0, 7)}. I still need to update another PR.`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    })
+    assert.equal(result.satisfied, true, body)
+  }
+})

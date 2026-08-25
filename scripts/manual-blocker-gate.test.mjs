@@ -193,6 +193,7 @@ test('approval 分句里的裸限定词在普通评论和 COMMENTED review 中�
     `LGTM ${headOid.slice(0, 7)} awaiting the maintenance window.`,
     `LGTM ${headOid.slice(0, 7)}, but please wait for deployment.`,
     `LGTM ${headOid.slice(0, 7)}, but hold until deployment.`,
+    `可以合并 ${headOid.slice(0, 7)}，但先等部署。`,
     `LGTM ${headOid.slice(0, 7)} if the change freeze ends.`,
     `LGTM ${headOid.slice(0, 7)} unless the rollback is ready.`,
     `LGTM ${headOid.slice(0, 7)} until the migration completes.`,
@@ -727,8 +728,11 @@ test('COMMENTED review 总结里的明确否决会阻塞', () => {
 test('主动英文 merge veto 会阻塞普通评论与 COMMENTED review', () => {
   for (const body of [
     "I'm blocking this merge.",
+    "I'm blocking this until tests pass.",
     'We are blocking the merge until migration passes.',
     'Block the merge until migration passes.',
+    'Block merging until the migration lands.',
+    'Hold the merge until the migration lands.',
     'I veto this merge.',
     'We are vetoing the merge until migration passes.',
     `I'm blocking this merge. LGTM ${headOid.slice(0, 7)}.`,
@@ -882,6 +886,11 @@ test('条件性放行无论分句顺序都不能解除人工阻止', () => {
     `LGTM ${headOid.slice(0, 7)} when the tests pass`,
     `After the migration is fixed. LGTM ${headOid.slice(0, 7)}`,
     `LGTM ${headOid.slice(0, 7)}. Once the migration is resolved.`,
+    `LGTM ${headOid.slice(0, 7)}. Please wait for deployment.`,
+    `LGTM ${headOid.slice(0, 7)}. Hold until deployment.`,
+    `Hold the merge. LGTM ${headOid.slice(0, 7)}.`,
+    `Once the dependency merges. LGTM ${headOid.slice(0, 7)}.`,
+    `LGTM ${headOid.slice(0, 7)}. After the upstream change lands.`,
     `As long as Alice signs off. LGTM ${headOid.slice(0, 7)}.`,
     `LGTM ${headOid.slice(0, 7)}. So long as security approves.`,
     `On condition that migration completes. LGTM ${headOid.slice(0, 7)}.`,
@@ -1430,6 +1439,10 @@ test('no longer blocker 的局部清理不能吞掉同句后续真实 veto', () 
 
 test('明确不阻止 PR 或 pull request 不会被主动 veto 规则反向命中', () => {
   for (const body of [
+    "I'm not blocking this until tests pass.",
+    'Do not block this until tests pass.',
+    'This might block this PR.',
+    "I'm blocking this user request until it completes.",
     "I'm not blocking this PR.",
     "We're no longer blocking the pull request.",
     'Do not block this PR.',

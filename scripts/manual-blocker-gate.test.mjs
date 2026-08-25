@@ -198,6 +198,9 @@ test('approval 分句里的裸限定词在普通评论和 COMMENTED review 中�
     `LGTM ${headOid.slice(0, 7)} until the migration completes.`,
     `LGTM ${headOid.slice(0, 7)} provided that production validation passes.`,
     `LGTM ${headOid.slice(0, 7)} assuming the security review completes.`,
+    `LGTM ${headOid.slice(0, 7)} as long as Alice signs off.`,
+    `LGTM ${headOid.slice(0, 7)} so long as security approves.`,
+    `LGTM ${headOid.slice(0, 7)} on condition that migration completes.`,
     `LGTM ${headOid.slice(0, 7)}，等到变更冻结结束。`,
     `LGTM ${headOid.slice(0, 7)}，在数据库迁移之后。`,
     `LGTM ${headOid.slice(0, 7)}，如果变更冻结结束。`,
@@ -879,6 +882,9 @@ test('条件性放行无论分句顺序都不能解除人工阻止', () => {
     `LGTM ${headOid.slice(0, 7)} when the tests pass`,
     `After the migration is fixed. LGTM ${headOid.slice(0, 7)}`,
     `LGTM ${headOid.slice(0, 7)}. Once the migration is resolved.`,
+    `As long as Alice signs off. LGTM ${headOid.slice(0, 7)}.`,
+    `LGTM ${headOid.slice(0, 7)}. So long as security approves.`,
+    `On condition that migration completes. LGTM ${headOid.slice(0, 7)}.`,
     `LGTM ${headOid.slice(0, 7)}. The migration must be fixed.`,
     `迁移修复后可以合并 ${headOid.slice(0, 7)}`,
     `等 Alice 签字后，可以合并 ${headOid.slice(0, 7)}`,
@@ -914,6 +920,7 @@ test('跨 PR 前置条件不能解除当前 PR 的人工阻止', () => {
     `After PR #123 is fixed. LGTM ${headOid.slice(0, 7)}.`,
     `LGTM ${headOid.slice(0, 7)}. After PR #123 is fixed.`,
     `Once PR #123 is green. LGTM ${headOid.slice(0, 7)}.`,
+    `As long as PR #123 is merged. LGTM ${headOid.slice(0, 7)}.`,
     `PR #123 must be fixed before merge. LGTM ${headOid.slice(0, 7)}.`,
     `PR #123 must be fixed first. LGTM ${headOid.slice(0, 7)}.`,
     `PR #123 must be merged first. LGTM ${headOid.slice(0, 7)}.`,
@@ -1022,6 +1029,7 @@ test('已经完成的历史状态说明不会误阻塞当前 head 放行', () =>
   for (const body of [
     `LGTM ${headOid.slice(0, 7)}. The migration was broken but is now fixed.`,
     `The rollout was incomplete, but it is now complete. LGTM ${headOid.slice(0, 7)}.`,
+    `Alice has signed off. LGTM ${headOid.slice(0, 7)}.`,
   ]) {
     const result = evaluateManualBlockers({
       headOid,

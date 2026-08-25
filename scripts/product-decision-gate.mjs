@@ -5,7 +5,7 @@ const HIGH_SEVERITY_PATTERN =
   /(?:alt=["']?P([01])["']?|badge\/P([01])-|\bP([01])\b)/i
 
 const PRODUCT_DEFERRAL_PATTERN =
-  /(?:产品(?:决定|决策|取舍)|不在本\s*PR\s*(?:修|改|处理)|超出(?:本\s*PR\s*)?范围|不改|不修|暂不处理|后续(?:处理|再处理|\s*PR|\s*issue)|另开(?:\s*PR|\s*issue)?)|\b(?:product\s+(?:decision|trade-?off)|out\s+of\s+scope|not\s+in\s+this\s+PR|won't\s+fix|will\s+not\s+fix|defer(?:red|ring)?|follow-?up\s+(?:PR|issue)|separate\s+(?:PR|issue))\b/i
+  /(?:产品(?:决定|决策|取舍)|不在本\s*PR\s*(?:修|改|处理)|超出(?:本\s*PR\s*)?范围|不改|不修|暂不处理|后续(?:处理|再处理|修复|解决|\s*PR|\s*issue)|另开(?:\s*PR|\s*issue)?|(?:会|将|将在)[^。！？!?\n]{0,30}(?:修复|处理|解决)|(?:下个|下一(?:个)?|以后|稍后)[^。！？!?\n]{0,24}(?:修复|处理|解决))|\b(?:product\s+(?:decision|trade-?off)|out\s+of\s+scope|not\s+in\s+this\s+PR|won't\s+fix|will\s+not\s+fix|defer(?:red|ring)?|follow-?up\s+(?:PR|issue)|separate\s+(?:PR|issue)|(?:will|plan(?:ned)?\s+to|going\s+to)[^.\n]{0,40}(?:fix|address|resolve)[^.\n]{0,40}(?:later|follow-?up|next\s+(?:PR|pull\s+request))|(?:fix|address|resolve)[^.\n]{0,20}(?:this|it)[^.\n]{0,20}later)\b/i
 
 const NEGATED_PRODUCT_DEFERRAL_PATTERN =
   /(?:不是|并非|并不是)\s*(?:产品(?:决定|决策|取舍)|不改|不修|暂不处理|超出(?:本\s*PR\s*)?范围)|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?(?:product\s+(?:decision|trade-?off)|out\s+of\s+scope|defer(?:red)?)\b/gi
@@ -15,6 +15,9 @@ const REVIEWER_ACCEPTANCE_PATTERN =
 
 const REVIEWER_REJECTION_PATTERN =
   /(?:不接受|不同意|不理解|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|合并前仍需|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
+
+const FINDING_FIXED_PATTERN =
+  /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
 
 function sameHead(value, headOid) {
   return String(value || '').toLowerCase() === String(headOid || '').toLowerCase()
@@ -26,6 +29,10 @@ function eventTime(value) {
 
 function commentTime(comment) {
   return eventTime(comment?.updated_at || comment?.created_at)
+}
+
+function dispositionTime(comment) {
+  return eventTime(comment?.created_at)
 }
 
 function isExplicitReviewerAcceptance(body) {
@@ -80,7 +87,7 @@ function isReviewerAcceptance({ thread, reviewerLogin, deferralIndex, reviews, h
   for (const comment of thread.comments.slice(deferralIndex + 1)) {
     index++
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
-    const at = commentTime(comment)
+    const at = dispositionTime(comment)
     if (at < deferralAt) continue
     if (isExplicitReviewerRejection(comment.body)) {
       dispositions.push({ disposition: 'reject', at, index })
@@ -147,14 +154,31 @@ export function evaluateProductDecisionGate({
 
     const finding = thread.comments[findingIndex]
     const severity = severityOf(finding.body)
-    const deferralOffset = thread.comments.slice(findingIndex + 1).findIndex((comment) => (
-      String(comment.login || '').toLowerCase() === author
-        && isProductDeferral(comment.body)
-    ))
-    if (deferralOffset < 0) continue
-
-    const deferralIndex = findingIndex + 1 + deferralOffset
     const reviewerLogin = String(finding.login || '').toLowerCase()
+    const authorEvents = thread.comments
+      .map((comment, index) => ({ comment, index }))
+      .filter(({ comment, index }) => (
+        index > findingIndex
+          && String(comment.login || '').toLowerCase() === author
+          && (isProductDeferral(comment.body) || FINDING_FIXED_PATTERN.test(String(comment.body || '')))
+      ))
+      .map(({ comment, index }) => ({
+        kind: isProductDeferral(comment.body) ? 'deferral' : 'fixed',
+        index,
+        at: commentTime(comment),
+      }))
+      .sort((left, right) => left.at - right.at || left.index - right.index)
+
+    const latestDeferral = authorEvents.filter((event) => event.kind === 'deferral').at(-1)
+    if (!latestDeferral) continue
+    const latestEvent = authorEvents.at(-1)
+    if (latestEvent?.kind === 'fixed'
+      && latestEvent.at >= latestDeferral.at
+      && String(thread.resolved_by || '').toLowerCase() === reviewerLogin) {
+      continue
+    }
+
+    const deferralIndex = latestDeferral.index
     if (isReviewerAcceptance({ thread, reviewerLogin, deferralIndex, reviews, headOid })) continue
     blockers.push({
       severity,

@@ -146,6 +146,23 @@ test('reviewer 最新相关 disposition 覆盖较早接受', () => {
   }).satisfied, false)
 })
 
+test('编辑旧 acceptance 不能覆盖后续 rejection', () => {
+  const candidate = thread({
+    authorReply: '超出本 PR 范围，不改。',
+    reviewerReply: 'Accepted as a separate concern.',
+  })
+  candidate.comments[2].updated_at = '2026-08-25T03:04:00Z'
+  candidate.comments.push({
+    login: 'codex', body: 'This remains a blocker.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+})
+
 test('reviewer 后续明确接受可以覆盖较早拒绝', () => {
   const candidate = thread({
     authorReply: '超出本 PR 范围，不改。',
@@ -218,6 +235,45 @@ test('P2、过时 finding 和真实修复回复不触发产品决策门', () => 
       threads: [candidate],
     }).satisfied, true)
   }
+})
+
+test('普通以后修措辞属于产品取舍延期', () => {
+  for (const authorReply of [
+    '这个问题会在后续修复。',
+    '将在下个 PR 修复。',
+    'I will fix this later.',
+  ]) {
+    const result = evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({ authorReply })],
+    })
+    assert.equal(result.satisfied, false, authorReply)
+  }
+})
+
+test('reviewer 在作者真实修复后 resolve 会淘汰旧 deferral', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope.',
+    reviewerReply: 'This remains a blocker.',
+    resolvedBy: 'codex',
+  })
+  candidate.comments.push({
+    login: 'author', body: '已修复并补了回归测试。',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+
+  candidate.resolved_by = 'author'
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
 })
 
 test('旧 head owner 批准不能放行', () => {

@@ -51,6 +51,12 @@ import {
 } from './merge-execution-policy.mjs'
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 import { evaluateReviewEvidence } from './review-evidence-gate.mjs'
+import {
+  consumeCiBridgeEvents,
+  bridgeEntriesFor,
+  formatCiBridgeEvent,
+  readCiBridge,
+} from './ci-mainline-bridge.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
 const repoArgIdx = process.argv.indexOf('--repo')
@@ -75,6 +81,21 @@ if (!DRY_RUN && ONLY_PR !== null && !EXPECTED_HEAD) {
 if (!DRY_RUN && ONLY_PR === null) {
   console.error('实合并必须使用 --repo <repo> --pr <number> --expected-head <40位SHA> 定点执行')
   process.exit(1)
+}
+
+// PR 总管发现的 CI 红灯通过本机 bridge 交给主线合并管家；live GitHub
+// 门禁仍是唯一事实源。bridge 只负责让本轮优先看到当前 head 的失败事实。
+const ciBridge = readCiBridge()
+const ciBridgeEntries = bridgeEntriesFor(ONLY_REPO, ciBridge)
+  .filter((event) => ONLY_PR === null || Number(event.pr) === ONLY_PR)
+const newCiBridgeEntries = DRY_RUN
+  ? consumeCiBridgeEvents({ bridge: { ...ciBridge, events: Object.fromEntries(
+    ciBridgeEntries.map((event) => [`${event.repo}#${event.pr}`, event]),
+  ) } })
+  : []
+if (DRY_RUN && newCiBridgeEntries.length) {
+  console.log('CI bridge（来自 PR 总管，仍以 live GitHub 为准）：')
+  for (const event of newCiBridgeEntries) console.log(`- ${formatCiBridgeEvent(event)}`)
 }
 
 // 仓库 → 允许 sweep 合并的 base 分支。

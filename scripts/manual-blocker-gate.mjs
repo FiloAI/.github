@@ -12,8 +12,14 @@ const BLOCK_PATTERNS = [
 const EXPLICIT_VETO_PATTERN =
   /(?:当前|现在|暂时)?(?:不宜|不应|不能|不可|不要|先别|暂不|禁止)(?:(?!阻塞|阻断|卡住|拦截)[^。！？!\n]){0,24}(?:合并|merge)|\b(?:do\s+not|don't|cannot|can't|should\s+not|must\s+not)\s+merge\b|\bnot\s+ready\s+to\s+merge\b/i
 
+const ACTIVE_MERGE_VETO_PATTERN =
+  /\b(?:(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+)?block(?:ing)?\s+(?:this\s+|the\s+)?merge\b/i
+
 const APPROVAL_PATTERN =
   /(?:同意|确认|允许)(?:这个|该)?(?:\s*pr)?(?:可以)?(?:直接)?合并|可以(?:直接)?合并|(?:代码)?(?:审查|审核)(?:已经|已)?通过(?:了)?|\b(?:lgtm|approved?|ok(?:ay)?\s+to\s+merge|please\s+merge|merge\s+it|go\s+ahead|ship\s+it)\b/i
+
+const APPROVAL_NEGATION_PATTERN =
+  /(?:尚未|还没|没有|不能|无法|不会|不)(?:批准|确认)[^。！？!\n]{0,16}(?:合并|merge)?|\b(?:(?:i|we)\s+)?(?:(?:have|has|had)\s+not|haven['’]t|hasn['’]t|hadn['’]t)\s+approved?\b|\b(?:(?:i|we)\s+)?(?:cannot|can['’]t|could\s+not|couldn['’]t|will\s+not|won['’]t|do\s+not|don['’]t)\s+approve\b/i
 
 const CLAUSE_UNCERTAINTY =
   /[?？]|(?:吗|么|呢|吧)(?:$|[\s。！？!?，,；;])/i
@@ -25,7 +31,7 @@ const STANDALONE_APPROVAL_CONDITION =
   /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b[^.。！？!?；;\n]{0,100}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|safe|healthy|done)\b|\bbefore\s+(?:merge|merging)\b|^(?:如果|若|待|等到|需要先|必须先|先)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|\b(?:must|needs?\s+to|has\s+to)\b[^。！？!?；;\n]{0,80}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|done|before\s+(?:merge|merging))\b/i
 
 const CROSS_PR_PREREQUISITE =
-  /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:this\s+)?(?:merge|merging)\b|\bbefore\s+(?:(?:we|i|you|they|maintainers?|the\s+team)\s+(?:can\s+|may\s+|should\s+|will\s+)?merge\b|(?:we|i|you|they)\s+merge\b|(?:this|the\s+current)\s+(?:pr|pull\s+request)\s+(?:can\s+|may\s+|should\s+|will\s+)?(?:merge|be\s+merged)\b)|\b(?:fixed|resolved|completed|approved|green|ready|done|merged)\s+first\b|^(?:如果|若|待|等到)[^。！？!?；;\n]{0,100}|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿|合并)后|先[^。！？!?；;\n]{0,80}合并|(?:在)?(?:我们|我|维护者|团队)合并(?:本|当前)?(?:\s*PR)?前|才能(?:合并|merge)/i
+  /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:this\s+)?(?:merge|merging)\b|\bbefore\s+(?:this\s+one|ours)\b|\bbefore\s+(?:(?:we|i|you|they|maintainers?|the\s+team)\s+(?:can\s+|may\s+|should\s+|will\s+)?merge\b|(?:we|i|you|they)\s+merge\b|(?:this|the\s+current)\s+(?:pr|pull\s+request)\s+(?:can\s+|may\s+|should\s+|will\s+)?(?:merge|be\s+merged)\b)|\b(?:fixed|resolved|completed|approved|green|ready|done|merged)\s+first\b|^(?:如果|若|待|等到)[^。！？!?；;\n]{0,100}|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿|合并)后|先[^。！？!?；;\n]{0,80}合并|(?:在)?(?:我们|我|维护者|团队)合并(?:本|当前)?(?:\s*PR)?前|(?:在)(?:本|当前|这个|我们的)(?:\s*PR|拉取请求)?\s*(?:合并)?\s*(?:之前|前)\s*(?:合并)?|才能(?:合并|merge)/i
 
 const INDEPENDENT_FOLLOWUP_OFFER = [
   /^if\s+(?:useful|helpful|desired|wanted|needed)\s*,?\s*(?:i|we)\s+(?:can|could|will|would)\b[^,，。！？!?；;\n]{0,160}[.]?$/i,
@@ -34,7 +40,7 @@ const INDEPENDENT_FOLLOWUP_OFFER = [
 ]
 
 const NON_BLOCKING_PATTERN =
-  /(?:不能|不会|不应|不得)[^。！？!\n]{0,16}(?:阻塞|阻断|卡住|拦截)[^。！？!\n]{0,8}(?:合并|merge)|(?:不|未)(?:是|属于|构成|算作)[^。！？!\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b/i
+  /(?:不能|不会|不应|不得)[^。！？!\n]{0,16}(?:阻塞|阻断|卡住|拦截)[^。！？!\n]{0,8}(?:合并|merge)|(?:不|未)(?:是|属于|构成|算作)[^。！？!\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b|\b(?:(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+)?(?:not|no\s+longer)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:stopped|ceased)\s+blocking\s+(?:this\s+|the\s+)?merge\b|\b(?:do\s+not|don['’]t)\s+block\s+(?:this\s+|the\s+)?merge\b/i
 
 const RESOLVED_BLOCKER_PATTERN =
   /\b(?:merge|release|functionality)\s+blocker\b[^.。！？!?\n]{0,32}\b(?:is|was|has\s+been|had\s+been)\s+(?:already\s+|now\s+)?(?:fixed|resolved|cleared|removed)\b|\b(?:fixed|resolved|cleared|removed)\b[^.。！？!?\n]{0,32}\b(?:the\s+)?(?:merge|release|functionality)\s+blocker\b|(?:合并|发布|功能)(?:阻断|阻塞)[^。！？!?\n]{0,24}(?:已|已经|现已)(?:修复|解决|解除|清除)|(?:已|已经|现已)(?:修复|解决|解除|清除)[^。！？!?\n]{0,24}(?:合并|发布|功能)(?:阻断|阻塞)/i
@@ -123,9 +129,13 @@ function classifyTextIntent(body, headOid, prNumber) {
   for (const [clauseIndex, clause] of clauses.entries()) {
     const clauseUncertainty = CLAUSE_UNCERTAINTY.test(clause)
     const pendingCondition = isPendingReleaseCondition(clause, prNumber)
+    const approvalNegation = APPROVAL_NEGATION_PATTERN.test(clause)
+      && (referencesHead(clause, headOid) || /(?:合并|\bmerge\b)/i.test(clause))
 
     const blockableClause = withoutNonBlockingSignals(clause)
-    const explicitBlock = EXPLICIT_VETO_PATTERN.test(blockableClause)
+    const explicitBlock = approvalNegation
+      || EXPLICIT_VETO_PATTERN.test(blockableClause)
+      || ACTIVE_MERGE_VETO_PATTERN.test(blockableClause)
       || BLOCK_PATTERNS.some((pattern) => pattern.test(blockableClause))
     if (explicitBlock) {
       sawBlock = true

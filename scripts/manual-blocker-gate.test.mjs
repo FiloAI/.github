@@ -196,6 +196,38 @@ test('not approved 不能因包含 approved 而解除阻止', () => {
   }).satisfied, false)
 })
 
+test('当前 head 的 contracted approval negation 保持 fail-closed', () => {
+  for (const body of [
+    `I haven't approved ${headOid.slice(0, 8)} yet.`,
+    `I can't approve ${headOid.slice(0, 8)}.`,
+    `I haven’t approved ${headOid.slice(0, 8)} yet. LGTM ${headOid.slice(0, 8)}.`,
+    `We won't approve ${headOid.slice(0, 8)}.`,
+    `我尚未确认可以合并 ${headOid.slice(0, 8)}。`,
+    `我不能批准合并 ${headOid.slice(0, 8)}。`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    })
+    assert.equal(result.satisfied, false, body)
+    assert.deepEqual(result.blockers, ['reviewer'], body)
+  }
+})
+
+test('其它 head 的 approval negation 不会伪造当前 head blocker', () => {
+  assert.equal(evaluateManualBlockers({
+    headOid,
+    comments: [{
+      login: 'reviewer', permission: 'write',
+      body: 'I haven\'t approved 1111111 yet.',
+      created_at: '2026-08-24T00:00:00Z',
+    }],
+  }).satisfied, true)
+})
+
 test('否认存在 merge blocker 的说明不是阻止', () => {
   for (const body of [
     'No merge blockers',
@@ -203,6 +235,10 @@ test('否认存在 merge blocker 的说明不是阻止', () => {
     '没有合并阻塞',
     '未发现 merge blocker',
     'Cursor 风险评级不能单独阻塞合并',
+    "I'm not blocking this merge.",
+    'We are no longer blocking the merge.',
+    'We stopped blocking this merge.',
+    "Don't block the merge.",
   ]) {
     assert.equal(evaluateManualBlockers({
       headOid,
@@ -225,6 +261,34 @@ test('COMMENTED review 总结里的明确否决会阻塞', () => {
   })
   assert.equal(result.satisfied, false)
   assert.deepEqual(result.blockers, ['reviewer'])
+})
+
+test('主动英文 merge veto 会阻塞普通评论与 COMMENTED review', () => {
+  for (const body of [
+    "I'm blocking this merge.",
+    'We are blocking the merge until migration passes.',
+    'Block the merge until migration passes.',
+    `I'm blocking this merge. LGTM ${headOid.slice(0, 7)}.`,
+    `LGTM ${headOid.slice(0, 7)}. Block the merge until migration passes.`,
+  ]) {
+    const commentResult = evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    })
+    assert.equal(commentResult.satisfied, false, body)
+
+    const reviewResult = evaluateManualBlockers({
+      headOid,
+      reviews: [{
+        login: 'reviewer', permission: 'write', state: 'COMMENTED', body,
+        commit_id: headOid, submitted_at: '2026-08-24T00:00:00Z',
+      }],
+    })
+    assert.equal(reviewResult.satisfied, false, body)
+  }
 })
 
 test('COMMENTED review 总结里的非阻塞说明不会误判', () => {
@@ -368,10 +432,13 @@ test('跨 PR 前置条件不能解除当前 PR 的人工阻止', () => {
     `PR #123 must merge before we merge. LGTM ${headOid.slice(0, 7)}.`,
     `PR #123 must be merged before we can merge this. LGTM ${headOid.slice(0, 7)}.`,
     `LGTM ${headOid.slice(0, 7)}. PR #123 has to merge before the team can merge.`,
+    `PR #123 must merge before this one. LGTM ${headOid.slice(0, 7)}.`,
+    `LGTM ${headOid.slice(0, 7)}. PR #123 must merge before ours.`,
     `等 PR #123 修复后，可以合并 ${headOid.slice(0, 7)}。`,
     `PR #123 修好才能合并。LGTM ${headOid.slice(0, 7)}。`,
     `先合并 PR #123，当前 PR 才能合并 ${headOid.slice(0, 7)}。`,
     `PR #123 必须在我们合并本 PR 前完成。LGTM ${headOid.slice(0, 7)}。`,
+    `PR #123 必须在这个 PR 之前合并。LGTM ${headOid.slice(0, 7)}。`,
   ]) {
     const result = evaluateManualBlockers({
       headOid,

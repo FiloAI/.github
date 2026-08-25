@@ -165,6 +165,10 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     '这个问题不能单独处理，必须在本 PR 修复。',
     'I do not consider this non-blocking; please fix it before merge.',
     '我不认为这是非阻塞问题，必须在本 PR 修复。',
+    'I cannot confirm this is fixed.',
+    'I have not verified this is resolved.',
+    '我无法确认已经修复。',
+    '我尚未核实问题已解决。',
   ]) {
     const result = evaluateProductDecisionGate({
       headOid: head,

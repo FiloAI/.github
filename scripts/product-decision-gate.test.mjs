@@ -1708,3 +1708,58 @@ test('owner marker 必须晚于编辑后的产品取舍', () => {
     assert.equal(result.satisfied, created_at.endsWith('06:00Z'), created_at)
   }
 })
+
+test('疑问式或不确定式 acceptance 不是 reviewer 明确放行', () => {
+  for (const reviewerReply of [
+    'Can we accept this as a separate concern?',
+    'Would you accept this as a separate concern?',
+    'Could we accept this as a separate concern',
+    'We might accept this as a separate concern.',
+    'Maybe accept this as a separate concern.',
+    'Perhaps we accept this as a separate concern.',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, false, reviewerReply)
+  }
+})
+
+test('同一消息中的疑问不压掉其后独立的明确 acceptance', () => {
+  const result = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [thread({
+      authorReply: 'Out of scope; defer to a follow-up PR.',
+      reviewerReply: 'Can we accept this as a separate concern? Accepted as a separate concern; non-blocking.',
+    })],
+  })
+  assert.equal(result.satisfied, true)
+})
+
+test('not going to fix 或 address 是明确产品取舍延期', () => {
+  for (const authorReply of [
+    'We are not going to fix this.',
+    "We're not going to address this.",
+    "I'm not going to resolve this in this PR.",
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({ authorReply })],
+    }).satisfied, false, authorReply)
+
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply,
+        reviewerReply: 'Accepted as a separate concern; non-blocking.',
+      })],
+    }).satisfied, true, authorReply)
+  }
+})

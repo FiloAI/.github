@@ -8,7 +8,7 @@ const SEVERITY_CHANGE_PATTERN =
   /\b(?:downgrad(?:e|ed|ing)|upgrad(?:e|ed|ing)|escalat(?:e|ed|ing)|reclassif(?:y|ied|ying)|severity|priority|should\s+be)\b|(?:降级|升级|提高|降低|调整|改为|定为)/i
 
 const PRODUCT_DEFERRAL_PATTERN =
-  /(?:产品(?:决定|决策|取舍)|不在本\s*PR\s*(?:修|改|处理)|超出(?:本\s*PR\s*)?范围|不改|不修|暂不处理|后续(?:处理|再处理|修复|解决|\s*PR|\s*issue)|另开(?:\s*PR|\s*issue)?|(?:会|将|将在)[^。！？!?\n]{0,30}(?:修复|处理|解决)|(?:下个|下一(?:个)?|以后|稍后)[^。！？!?\n]{0,24}(?:修复|处理|解决))|\b(?:product\s+(?:decision|trade-?off)|(?:(?:this|that)(?:\s+behavio(?:u)?r)?|it)\s+(?:is|'s)\s+(?:by\s+design|expected\s+behavio(?:u)?r)|keep(?:ing)?(?:\s+(?:this|it))?\s+as[-\s]+is|out\s+of\s+scope|not\s+in\s+this\s+PR|won't\s+fix|will\s+not\s+fix|defer(?:red|ring)?|follow-?up\s+(?:PR|issue)|separate\s+(?:PR|issue)|(?:will|plan(?:ned)?\s+to|going\s+to)[^.\n]{0,40}(?:fix|address|resolve)[^.\n]{0,40}(?:later|follow-?up|next\s+(?:PR|pull\s+request))|(?:fix|address|resolve)[^.\n]{0,20}(?:this|it)[^.\n]{0,20}later)\b/i
+  /(?:产品(?:决定|决策|取舍)|不在本\s*PR\s*(?:修|改|处理)|超出(?:本\s*PR\s*)?范围|不改|不修|暂不处理|后续(?:处理|再处理|修复|解决|\s*PR|\s*issue)|另开(?:\s*PR|\s*issue)?|(?:会|将|将在)[^。！？!?\n]{0,30}(?:修复|处理|解决)|(?:下个|下一(?:个)?|以后|稍后)[^。！？!?\n]{0,24}(?:修复|处理|解决))|\b(?:product\s+(?:decision|trade-?off)|(?:(?:this|that)(?:\s+behavio(?:u)?r)?|it)\s+(?:is|'s)\s+(?:by\s+design|expected\s+behavio(?:u)?r)|keep(?:ing)?(?:\s+(?:this|it))?\s+as[-\s]+is|out\s+of\s+scope|not\s+in\s+this\s+PR|won't\s+fix|will\s+not\s+fix|(?:(?:i(?:\s+am|['’]m)|we(?:\s+are|['’]re))\s+not\s+going\s+to\s+(?:fix|address|resolve))|defer(?:red|ring)?|follow-?up\s+(?:PR|issue)|separate\s+(?:PR|issue)|(?:will|plan(?:ned)?\s+to|going\s+to)[^.\n]{0,40}(?:fix|address|resolve)[^.\n]{0,40}(?:later|follow-?up|next\s+(?:PR|pull\s+request))|(?:fix|address|resolve)[^.\n]{0,20}(?:this|it)[^.\n]{0,20}later)\b/i
 
 const NEGATED_PRODUCT_DEFERRAL_PATTERN =
   /(?:不是|并非|并不是)\s*(?:产品(?:决定|决策|取舍)|不改|不修|暂不处理|超出(?:本\s*PR\s*)?范围)|\b(?:is\s+not|isn't|was\s+not|wasn't|not)\s+(?:a\s+)?(?:product\s+(?:decision|trade-?off)|by\s+design|expected\s+behavio(?:u)?r|out\s+of\s+scope|defer(?:red)?)\b|\b(?:do\s+not|don't|should\s+not|shouldn't|cannot|can't|won't|not)\s+keep(?:\s+(?:this|it))?\s+as[-\s]+is\b/gi
@@ -39,6 +39,9 @@ const REVIEWER_REJECTION_PATTERN =
 
 const NEGATED_REVIEWER_WITHDRAWAL_PATTERN =
   /\b(?:(?:have|has|had)\s+not|haven['’]t|hasn['’]t|hadn['’]t)\s+(?:withdrawn|retracted)\b[^.。！？!?\n]{0,40}\b(?:blocker|objection|concern|request\s+for\s+changes)\b|\b(?:(?:do|does|did)\s+not|don['’]t|doesn['’]t|didn['’]t)\s+(?:withdraw|retract)\b[^.。！？!?\n]{0,40}\b(?:blocker|objection|concern|request\s+for\s+changes)\b|\b(?:blocker|objection|concern|request\s+for\s+changes)\b[^.。！？!?\n]{0,40}\b(?:(?:has|had)\s+not|hasn['’]t|hadn['’]t)\s+been\s+(?:withdrawn|retracted)\b/i
+
+const REVIEWER_ACCEPTANCE_UNCERTAINTY_PATTERN =
+  /[?？]|\b(?:can|could|would|should|may|might)\s+(?:i|we|you|maintainers?|the\s+team)\s+(?:accept|agree|consider|regard|treat)\b|\b(?:i|we)\s+(?:could|would|may|might)\s+(?:accept|agree|consider|regard|treat)\b|\b(?:maybe|perhaps|possibly)\b[^.。！？!?\n]{0,40}\b(?:accept|agree|consider|regard|treat)\b/i
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
@@ -150,15 +153,26 @@ function hasSemanticDispositionEdit(comment, dispositionKind) {
   })
 }
 
+function reviewerAcceptanceEvidence(body) {
+  return String(body || '')
+    .split(/(?<=[。！？!?；;])|\n+|(?<=\.)\s+/)
+    .map((part) => part.trim())
+    .filter((part) => (
+      part
+        && REVIEWER_ACCEPTANCE_PATTERN.test(part)
+        && !REVIEWER_ACCEPTANCE_UNCERTAINTY_PATTERN.test(part)
+        && !REVIEWER_REJECTION_PATTERN.test(part)
+        && !NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(part)
+    ))
+    .join(' ')
+}
+
 function isExplicitReviewerAcceptance(body) {
-  const value = String(body || '')
-  return REVIEWER_ACCEPTANCE_PATTERN.test(value)
-    && !REVIEWER_REJECTION_PATTERN.test(value)
-    && !NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(value)
+  return Boolean(reviewerAcceptanceEvidence(body))
 }
 
 function reviewerAcceptanceKind(body) {
-  const value = String(body || '')
+  const value = reviewerAcceptanceEvidence(body)
   if (!isExplicitReviewerAcceptance(value)) return null
   if (REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN.test(value)) return 'deferral'
   if (REVIEWER_FIXED_ACCEPTANCE_PATTERN.test(value)) return 'fixed'

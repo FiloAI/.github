@@ -19,13 +19,19 @@ const CLAUSE_UNCERTAINTY =
   /[?？]|(?:吗|么|呢|吧)(?:$|[\s。！？!?，,；;])/i
 
 const PENDING_CONDITION =
-  /(?:不同意|不确认|不允许|不批准|未批准|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不|(?:如果|若)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后)|\b(?:not\s+approved?|do\s+not\s+approve|don't\s+approve|need(?:s|ed)?\s+to|must|before)\b|\b(?:is|are|remain(?:s)?)\s+(?:still\s+)?(?:broken|unfinished|incomplete|failing|unsafe|not\s+ready)\b|\bstill\s+(?:a\s+)?(?:merge\s+|release\s+|functionality\s+)?blocker\b|\b(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b/i
+  /(?:不同意|不确认|不允许|不批准|未批准|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不|(?:如果|若)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|(?:仍|还|尚)(?:然)?(?:未|没)(?:修复|解决|完成|通过|验证|批准|就绪)|(?:验证|审查|检查|迁移|发布)[^。！？!?；;\n]{0,24}(?:仍|还|尚)?(?:未|没)(?:修复|解决|完成|通过))|\b(?:not\s+approved?|do\s+not\s+approve|don't\s+approve|need(?:s|ed)?\s+to|must|before)\b|\b(?:is|are|remain(?:s)?)\s+(?:still\s+)?(?:broken|unfinished|incomplete|failing|unsafe|outstanding|not\s+(?:fixed|resolved|complete|completed|validated|approved|ready))\b|\bstill\s+(?:a\s+)?(?:merge\s+|release\s+|functionality\s+)?blocker\b|\b(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b/i
 
 const STANDALONE_APPROVAL_CONDITION =
   /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:merge|merging)\b|^(?:如果|若|待|等到|需要先|必须先|先)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|\b(?:must|needs?\s+to|has\s+to)\b[^。！？!?；;\n]{0,80}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:ed)?\s*off|approve(?:d)?|succeed(?:ed)?|green|ready|done|before\s+(?:merge|merging))\b/i
 
 const CROSS_PR_PREREQUISITE =
-  /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:this\s+)?(?:merge|merging)\b|\b(?:fixed|resolved|completed|approved|green|ready|done)\s+first\b|^(?:如果|若|待|等到)[^。！？!?；;\n]{0,100}|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|才能(?:合并|merge)/i
+  /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:this\s+)?(?:merge|merging)\b|\b(?:fixed|resolved|completed|approved|green|ready|done|merged)\s+first\b|^(?:如果|若|待|等到)[^。！？!?；;\n]{0,100}|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿|合并)后|先[^。！？!?；;\n]{0,80}合并|才能(?:合并|merge)/i
+
+const INDEPENDENT_FOLLOWUP_OFFER = [
+  /^if\s+(?:useful|helpful|desired|wanted|needed)\s*,?\s*(?:i|we)\s+(?:can|could|will|would)\b[^,，。！？!?；;\n]{0,160}[.]?$/i,
+  /^(?:i|we)\s+(?:can|could|will|would)\b[^,，。！？!?；;\n]{0,120}\b(?:in\s+(?:a\s+)?follow[- ]?up|later|after(?:ward)?s?)\b[^,，。！？!?；;\n]{0,40}\bif\s+(?:useful|helpful|desired|wanted|needed)[.]?$/i,
+  /^(?:如果|如|若)(?:有)?(?:需要|必要|帮助|合适)[，,]?\s*(?:我|我们)(?:可以|会|能|愿意)[^,，。！？!?；;\n]{0,120}(?:后续|之后|另行|补充|跟进)[^,，。！？!?；;\n]{0,40}[。]?$/i,
+]
 
 const NON_BLOCKING_PATTERN =
   /(?:不能|不会|不应|不得)[^。！？!\n]{0,16}(?:阻塞|阻断|卡住|拦截)[^。！？!\n]{0,8}(?:合并|merge)|(?:不|未)(?:是|属于|构成|算作)[^。！？!\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b/i
@@ -80,8 +86,14 @@ function referencesDifferentPr(text, prNumber) {
   return references.some((match) => Number(match[1]) !== prNumber)
 }
 
+function isIndependentFollowupOffer(text) {
+  const value = String(text || '').trim()
+  return INDEPENDENT_FOLLOWUP_OFFER.some((pattern) => pattern.test(value))
+}
+
 function isPendingReleaseCondition(text, prNumber) {
   const value = String(text || '')
+  if (isIndependentFollowupOffer(value)) return false
   if (!PENDING_CONDITION.test(value) && !STANDALONE_APPROVAL_CONDITION.test(value)) {
     return false
   }
@@ -106,7 +118,7 @@ function classifyTextIntent(body, headOid, prNumber) {
   let intent = null
   for (const [clauseIndex, clause] of clauses.entries()) {
     const clauseUncertainty = CLAUSE_UNCERTAINTY.test(clause)
-    const pendingCondition = PENDING_CONDITION.test(clause)
+    const pendingCondition = isPendingReleaseCondition(clause, prNumber)
 
     const blockableClause = withoutNonBlockingSignals(clause)
     const explicitBlock = EXPLICIT_VETO_PATTERN.test(blockableClause)

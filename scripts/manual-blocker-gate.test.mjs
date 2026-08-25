@@ -339,6 +339,8 @@ test('条件性放行无论分句顺序都不能解除人工阻止', () => {
     `LGTM ${headOid.slice(0, 7)}. The migration must be fixed.`,
     `迁移修复后可以合并 ${headOid.slice(0, 7)}`,
     `等 Alice 签字后，可以合并 ${headOid.slice(0, 7)}`,
+    `待 Alice 签字，可以合并 ${headOid.slice(0, 7)}`,
+    `等到安全审查通过，可以合并 ${headOid.slice(0, 7)}`,
     `如果 Alice 签字，可以合并 ${headOid.slice(0, 7)}`,
     `若安全审查通过，可以合并 ${headOid.slice(0, 7)}`,
     `可以合并 ${headOid.slice(0, 7)}，如果 Alice 签字`,
@@ -362,8 +364,10 @@ test('跨 PR 前置条件不能解除当前 PR 的人工阻止', () => {
     `Once PR #123 is green. LGTM ${headOid.slice(0, 7)}.`,
     `PR #123 must be fixed before merge. LGTM ${headOid.slice(0, 7)}.`,
     `PR #123 must be fixed first. LGTM ${headOid.slice(0, 7)}.`,
+    `PR #123 must be merged first. LGTM ${headOid.slice(0, 7)}.`,
     `等 PR #123 修复后，可以合并 ${headOid.slice(0, 7)}。`,
     `PR #123 修好才能合并。LGTM ${headOid.slice(0, 7)}。`,
+    `先合并 PR #123，当前 PR 才能合并 ${headOid.slice(0, 7)}。`,
   ]) {
     const result = evaluateManualBlockers({
       headOid,
@@ -389,8 +393,11 @@ test('放行前后的未完成状态分句继续保留人工阻止', () => {
     `The migration is still broken. LGTM ${headOid.slice(0, 7)}.`,
     `LGTM ${headOid.slice(0, 7)}. The rollout is incomplete.`,
     `The tests are still failing. LGTM ${headOid.slice(0, 7)}.`,
+    `LGTM ${headOid.slice(0, 7)}, however production validation remains outstanding.`,
+    `The migration is still not fixed. LGTM ${headOid.slice(0, 7)}.`,
     `可以合并 ${headOid.slice(0, 7)}。迁移仍未完成。`,
     `迁移仍未完成。可以合并 ${headOid.slice(0, 7)}。`,
+    `可以合并 ${headOid.slice(0, 7)}。生产验证尚未通过。`,
   ]) {
     const result = evaluateManualBlockers({
       headOid,
@@ -539,6 +546,9 @@ test('其它独立事项的 pending 措辞不会污染 current-head 放行', () 
   for (const body of [
     `I still need to update another PR. LGTM ${headOid.slice(0, 7)}.`,
     `LGTM ${headOid.slice(0, 7)}. I still need to update another PR.`,
+    `LGTM ${headOid.slice(0, 7)}. If useful, I can add docs in a follow-up.`,
+    `I can add docs in a follow-up if useful. LGTM ${headOid.slice(0, 7)}.`,
+    `LGTM ${headOid.slice(0, 7)}。如果有需要，我可以后续补充文档。`,
   ]) {
     const result = evaluateManualBlockers({
       headOid,
@@ -555,6 +565,24 @@ test('其它独立事项的 pending 措辞不会污染 current-head 放行', () 
     })
     assert.equal(result.satisfied, true, body)
   }
+})
+
+test('follow-up 建议不能掩盖同一分句里的真实未完成条件', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    comments: [
+      {
+        login: 'reviewer', permission: 'write', body: 'Do not merge.',
+        created_at: '2026-08-24T00:00:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write',
+        body: `LGTM ${headOid.slice(0, 7)}. If useful, I can add docs in a follow-up, but production validation remains outstanding.`,
+        created_at: '2026-08-24T00:01:00Z',
+      },
+    ],
+  })
+  assert.equal(result.satisfied, false)
 })
 
 test('解释性分句不能隔断属于当前 PR 的放行条件', () => {

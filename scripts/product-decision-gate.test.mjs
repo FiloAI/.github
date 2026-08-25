@@ -572,6 +572,62 @@ test('未标 severity 的 finding 在作者 deferral 后标为 P1 仍需授权',
   }).satisfied, true)
 })
 
+test('finding severity 始终归属原始 reviewer，不被中途参与者抢占', () => {
+  const candidate = {
+    is_resolved: true,
+    is_outdated: false,
+    resolved_by: 'author',
+    comments: [
+      {
+        login: 'codex', body: 'This behavior changes the product contract.',
+        created_at: '2026-08-25T03:00:00Z',
+      },
+      {
+        login: 'author', body: 'Out of scope; defer to a follow-up PR.',
+        created_at: '2026-08-25T03:01:00Z',
+      },
+      {
+        login: 'other-reviewer', body: 'I would classify this as P2.',
+        created_at: '2026-08-25T03:02:00Z',
+      },
+      {
+        login: 'codex', body: 'P1: this product behavior must remain gated.',
+        created_at: '2026-08-25T03:03:00Z',
+      },
+    ],
+  }
+
+  const blocked = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  })
+  assert.equal(blocked.satisfied, false)
+  assert.deepEqual(blocked.blockers.map(({ severity, reviewer }) => ({ severity, reviewer })), [
+    { severity: 'P1', reviewer: 'codex' },
+  ])
+
+  candidate.comments.push({
+    login: 'other-reviewer', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:04:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:05:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
 test('P3 严重度生命周期保留 deferral，最终只 gate P0/P1', () => {
   const escalated = thread({
     severity: 'P3',
@@ -1082,6 +1138,96 @@ test('同秒 thread comments 使用可靠顺序决定最终 disposition', () => 
     authorLogin: 'author',
     threads: [candidate],
   }).satisfied, false)
+})
+
+test('同秒 acceptance 必须在线程中严格晚于 author disposition', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  candidate.comments[1].created_at = '2026-08-25T03:02:00Z'
+  candidate.comments.splice(1, 0, {
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
+test('同秒 acceptance 必须在线程中严格晚于 P2 到 P1 escalation', () => {
+  const candidate = thread({
+    severity: 'P2',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  candidate.comments.push(
+    {
+      login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+      created_at: '2026-08-25T03:02:00Z',
+    },
+    {
+      login: 'codex', body: 'Escalating this finding from P2 to P1.',
+      created_at: '2026-08-25T03:02:00Z',
+    },
+  )
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'P1 deferral accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
+test('severity 语义编辑与 acceptance 同秒时无法证明顺序，继续 fail-closed', () => {
+  const candidate = thread({
+    severity: 'P1',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  candidate.comments[0] = {
+    ...candidate.comments[0],
+    updated_at: '2026-08-25T03:02:00Z',
+    edits: [{ body: '![P2 Badge] P2 behavior regression' }],
+  }
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
 })
 
 test('编辑既有 deferral 使旧 acceptance 失效并要求 fresh acceptance', () => {

@@ -368,11 +368,20 @@ function latestAuthorDisposition(events) {
   return candidates.sort((left, right) => left.index - right.index).at(-1)
 }
 
+function threadEventFollows({ at, index, semanticEdit = false }, boundaryAt, boundaryIndex, boundaryIsEdit = false) {
+  if (at > boundaryAt) return true
+  if (at < boundaryAt) return false
+  if (semanticEdit || boundaryIsEdit) return false
+  return index > boundaryIndex
+}
+
 function latestReviewerDisposition({
   thread,
   reviewerLogin,
   afterIndex,
   highFindingAt,
+  highFindingIndex,
+  highFindingIsEdit,
   evidenceAt,
   evidenceStrictAfter,
   evidenceKind,
@@ -404,7 +413,18 @@ function latestReviewerDisposition({
       const acceptsCurrentEvidence = acceptanceKind
         && !(acceptanceKind === 'fixed' && evidenceKind !== 'fixed')
       if (acceptsCurrentEvidence
-        && (evidenceStrictAfter ? at > effectiveBoundary : at >= effectiveBoundary)) {
+        && threadEventFollows(
+          { at, index, semanticEdit },
+          evidenceAt || evidenceCreatedAt,
+          afterIndex,
+          evidenceStrictAfter,
+        )
+        && threadEventFollows(
+          { at, index, semanticEdit },
+          highFindingAt || 0,
+          highFindingIndex,
+          highFindingIsEdit,
+        )) {
         dispositions.push({
           disposition: 'accept', at,
           source: 'thread',
@@ -476,22 +496,26 @@ export function evaluateProductDecisionGate({
     const reviewerComments = thread.comments
       .map((comment, index) => ({ comment, index }))
       .filter(({ comment }) => String(comment.login || '').toLowerCase() !== author)
-    const firstFinding = reviewerComments.find(({ comment }) => severityOf(comment.body))
-    if (!firstFinding) continue
-    const finding = firstFinding.comment
+    const findingOrigin = { comment: thread.comments[0], index: 0 }
+    if (!findingOrigin.comment
+      || String(findingOrigin.comment.login || '').toLowerCase() === author) continue
+    const finding = findingOrigin.comment
     const reviewerLogin = String(finding.login || '').toLowerCase()
-    const findingEvents = reviewerComments
-      .filter(({ comment, index }) => (
-        index >= firstFinding.index
-          && String(comment.login || '').toLowerCase() === reviewerLogin
-      ))
-      .map(({ comment, index }) => ({
+    const findingEvents = []
+    for (const { comment, index } of reviewerComments) {
+      if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
+      const severity = severityDispositionOf(comment.body, findingEvents.length === 0)
+      if (!severity) continue
+      const at = severityDispositionTime(comment)
+      findingEvents.push({
         comment,
         index,
-        severity: severityDispositionOf(comment.body, index === firstFinding.index),
-        at: severityDispositionTime(comment),
-      }))
-      .filter(({ severity }) => severity)
+        severity,
+        at,
+        semanticEdit: at > dispositionTime(comment),
+      })
+    }
+    if (findingEvents.length === 0) continue
     const latestFindingAt = Math.max(...findingEvents.map((event) => event.at))
     const latestFindingCandidates = findingEvents.filter((event) => event.at === latestFindingAt)
     const latestFinding = latestFindingCandidates.sort((left, right) => {
@@ -503,12 +527,7 @@ export function evaluateProductDecisionGate({
 
     // Severity follows the latest explicit marker. Preserve author disposition
     // history across both P2 -> P1 escalation and P1 -> P2 downgrade.
-    const reviewerStartIndex = thread.comments.findIndex((comment) => (
-      String(comment.login || '').toLowerCase() === reviewerLogin
-    ))
-    const findingStartIndex = reviewerStartIndex >= 0
-      ? Math.min(firstFinding.index, reviewerStartIndex)
-      : firstFinding.index
+    const findingStartIndex = findingOrigin.index
     const severity = latestFinding.severity
     const highFindingAt = latestFinding.at
     const authorEvents = thread.comments
@@ -529,6 +548,8 @@ export function evaluateProductDecisionGate({
       reviewerLogin,
       afterIndex: evidenceEvent.index,
       highFindingAt,
+      highFindingIndex: latestFinding.index,
+      highFindingIsEdit: latestFinding.semanticEdit,
       evidenceAt: evidenceEvent.at,
       evidenceStrictAfter: evidenceEvent.strictAfter,
       evidenceKind: evidenceEvent.kind,

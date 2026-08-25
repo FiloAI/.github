@@ -182,6 +182,80 @@ test('原阻止者第一人称或直接批准当前 head 可以解除 veto', () 
   }
 })
 
+test('approval 分句里的裸限定词在普通评论和 COMMENTED review 中保持 fail-closed', () => {
+  const conditionalApprovals = [
+    `LGTM ${headOid.slice(0, 7)} once the change freeze ends.`,
+    `LGTM ${headOid.slice(0, 7)} after the database migration.`,
+    `LGTM ${headOid.slice(0, 7)} when the maintenance window opens.`,
+    `LGTM ${headOid.slice(0, 7)} before the rollout meeting.`,
+    `LGTM ${headOid.slice(0, 7)} subject to the change freeze.`,
+    `LGTM ${headOid.slice(0, 7)} pending the database migration.`,
+    `LGTM ${headOid.slice(0, 7)} awaiting the maintenance window.`,
+    `LGTM ${headOid.slice(0, 7)}，等到变更冻结结束。`,
+    `LGTM ${headOid.slice(0, 7)}，在数据库迁移之后。`,
+  ]
+
+  for (const source of ['comments', 'reviews']) {
+    const priorBlock = source === 'comments'
+      ? {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        }
+      : {
+          login: 'reviewer', permission: 'write', state: 'CHANGES_REQUESTED',
+          commit_id: headOid, submitted_at: '2026-08-24T00:00:00Z',
+        }
+
+    for (const body of conditionalApprovals) {
+      const conditionalEvent = source === 'comments'
+        ? {
+            login: 'reviewer', permission: 'write', body,
+            created_at: '2026-08-24T00:01:00Z',
+          }
+        : {
+            login: 'reviewer', permission: 'write', state: 'COMMENTED', body,
+            commit_id: headOid, submitted_at: '2026-08-24T00:01:00Z',
+          }
+      assert.equal(evaluateManualBlockers({
+        headOid,
+        [source]: [priorBlock, conditionalEvent],
+      }).satisfied, false, `${source}: ${body}`)
+    }
+
+    const thirdPartyEvent = source === 'comments'
+      ? {
+          login: 'reviewer', permission: 'write',
+          body: `Alice LGTM ${headOid.slice(0, 7)} after the database migration.`,
+          created_at: '2026-08-24T00:01:00Z',
+        }
+      : {
+          login: 'reviewer', permission: 'write', state: 'COMMENTED',
+          body: `Alice LGTM ${headOid.slice(0, 7)} after the database migration.`,
+          commit_id: headOid, submitted_at: '2026-08-24T00:01:00Z',
+        }
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      [source]: [priorBlock, thirdPartyEvent],
+    }).satisfied, false, `${source}: attributed approval`)
+
+    const directRelease = source === 'comments'
+      ? {
+          login: 'reviewer', permission: 'write',
+          body: `I explicitly approve ${headOid.slice(0, 7)}.`,
+          created_at: '2026-08-24T00:01:00Z',
+        }
+      : {
+          login: 'reviewer', permission: 'write', state: 'COMMENTED',
+          body: `I explicitly approve ${headOid.slice(0, 7)}.`,
+          commit_id: headOid, submitted_at: '2026-08-24T00:01:00Z',
+        }
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      [source]: [priorBlock, directRelease],
+    }).satisfied, true, `${source}: direct release`)
+  }
+})
+
 test('同一阻止者引用当前 SHA 明确放行后解除', () => {
   assert.equal(evaluateManualBlockers({
     headOid,

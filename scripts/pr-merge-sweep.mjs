@@ -219,7 +219,12 @@ function manualBlockerGate(repo, pr) {
         updated_at: comment.updated_at,
       }
     })
-    return evaluateManualBlockers({ headOid: pr.headRefOid, reviews, comments })
+    return evaluateManualBlockers({
+      headOid: pr.headRefOid,
+      prNumber: pr.number,
+      reviews,
+      comments,
+    })
   } catch (error) {
     return {
       satisfied: false,

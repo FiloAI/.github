@@ -56,7 +56,16 @@ function clausesFrom(body) {
     .filter(Boolean)
 }
 
-function classifyTextIntent(body, headOid) {
+function referencesDifferentPr(text, prNumber) {
+  if (/\b(?:another|other)\s+(?:pull\s+request|pr)\b|(?:另一个|其它|其他)(?:\s*PR|拉取请求)/i.test(String(text || ''))) {
+    return true
+  }
+  if (!Number.isInteger(prNumber)) return false
+  const references = [...String(text || '').matchAll(/\b(?:pull\s+request|pr)\s*#?(\d+)\b/gi)]
+  return references.some((match) => Number(match[1]) !== prNumber)
+}
+
+function classifyTextIntent(body, headOid, prNumber) {
   if (STEWARD_MARKERS.some((marker) => String(body || '').includes(marker))) return null
   const clauses = clausesFrom(body)
   let intent = null
@@ -72,17 +81,19 @@ function classifyTextIntent(body, headOid) {
     }
 
     // A veto in the same clause always wins. Questions and conditional
-    // approvals are not an explicit current-head release. A standalone
-    // condition only qualifies an adjacent approval clause; unrelated
-    // statements elsewhere in the same comment must not poison a release.
-    const adjacentCondition = [clauses[clauseIndex - 1], clauses[clauseIndex + 1]]
-      .filter(Boolean)
-      .some((candidate) => !CLAUSE_UNCERTAINTY.test(candidate)
-        && STANDALONE_APPROVAL_CONDITION.test(candidate))
+    // approvals are not an explicit current-head release. A condition may
+    // be separated by explanatory clauses, but a condition explicitly
+    // scoped to another PR must not poison this PR's release.
+    const relatedCondition = clauses.some((candidate, candidateIndex) => (
+      candidateIndex !== clauseIndex
+        && !CLAUSE_UNCERTAINTY.test(candidate)
+        && STANDALONE_APPROVAL_CONDITION.test(candidate)
+        && !referencesDifferentPr(candidate, prNumber)
+    ))
     if (!explicitBlock
       && !clauseUncertainty
       && !pendingCondition
-      && !adjacentCondition
+      && !relatedCondition
       && APPROVAL_PATTERN.test(clause)
       && referencesHead(clause, headOid)) {
       intent = 'release'
@@ -91,15 +102,15 @@ function classifyTextIntent(body, headOid) {
   return intent
 }
 
-function recordTextSignals({ body, login, at, headOid, latestBlock, latestRelease, nextIndex }) {
-  const intent = classifyTextIntent(body, headOid)
+function recordTextSignals({ body, login, at, headOid, prNumber, latestBlock, latestRelease, nextIndex }) {
+  const intent = classifyTextIntent(body, headOid, prNumber)
   if (!intent) return
   nextIndex()
   if (intent === 'block') latestBlock(login, at)
   if (intent === 'release') latestRelease(login, at)
 }
 
-export function evaluateManualBlockers({ headOid, reviews = [], comments = [] }) {
+export function evaluateManualBlockers({ headOid, prNumber, reviews = [], comments = [] }) {
   const latestBlock = new Map()
   const latestRelease = new Map()
   let index = 0
@@ -129,6 +140,7 @@ export function evaluateManualBlockers({ headOid, reviews = [], comments = [] })
         login: review.login,
         at,
         headOid,
+        prNumber,
         latestBlock: (login, signalAt) => record(latestBlock, login, signalAt),
         latestRelease: (login, signalAt) => record(latestRelease, login, signalAt),
         nextIndex: () => { index++ },
@@ -144,6 +156,7 @@ export function evaluateManualBlockers({ headOid, reviews = [], comments = [] })
       login: comment.login,
       at,
       headOid,
+      prNumber,
       latestBlock: (login, signalAt) => record(latestBlock, login, signalAt),
       latestRelease: (login, signalAt) => record(latestRelease, login, signalAt),
       nextIndex: () => { index++ },

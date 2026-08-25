@@ -458,3 +458,45 @@ test('其它独立事项的 pending 措辞不会污染 current-head 放行', () 
     assert.equal(result.satisfied, true, body)
   }
 })
+
+test('解释性分句不能隔断属于当前 PR 的放行条件', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    prNumber: 22,
+    comments: [
+      {
+        login: 'reviewer', permission: 'write', body: 'Do not merge.',
+        created_at: '2026-08-24T00:00:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write',
+        body: `LGTM ${headOid.slice(0, 7)}. 我再确认一下。After the migration is fixed.`,
+        created_at: '2026-08-24T00:01:00Z',
+      },
+    ],
+  })
+  assert.equal(result.satisfied, false)
+})
+
+test('明确属于其它 PR 的条件不会污染当前 PR 放行', () => {
+  for (const body of [
+    `For PR #123, security review must complete. LGTM ${headOid.slice(0, 7)} for this PR.`,
+    `For another PR, security review must complete. LGTM ${headOid.slice(0, 7)} for this PR.`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      prNumber: 22,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    })
+    assert.equal(result.satisfied, true, body)
+  }
+})

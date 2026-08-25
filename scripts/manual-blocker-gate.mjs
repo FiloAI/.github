@@ -19,7 +19,7 @@ const CLAUSE_UNCERTAINTY =
   /[?？]|(?:吗|么|呢|吧)(?:$|[\s。！？!?，,；;])/i
 
 const PENDING_CONDITION =
-  /(?:不同意|不确认|不允许|不批准|未批准|不过|但是|但|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不)|\b(?:not\s+approved?|do\s+not\s+approve|don't\s+approve|but|however|still|need(?:s|ed)?\s+to|must|before|once)\b/i
+  /(?:不同意|不确认|不允许|不批准|未批准|不过|但是|但|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不)|\b(?:not\s+approved?|do\s+not\s+approve|don't\s+approve|but|however|still|need(?:s|ed)?\s+to|must|before)\b|\b(?:after|when|once)\b(?=[^。！？!?；;\n]{0,60}\b(?:fix(?:ed)?|pass(?:es|ed)?|complete(?:d)?|resolve(?:d)?|ready|done)\b)/i
 
 const NON_BLOCKING_PATTERN =
   /(?:不能|不会|不应|不得)[^。！？!\n]{0,16}(?:阻塞|阻断|卡住|拦截)[^。！？!\n]{0,8}(?:合并|merge)|(?:不|未)(?:是|属于|构成|算作)[^。！？!\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b/i
@@ -59,8 +59,9 @@ function classifyTextIntent(body, headOid) {
   let sawBlock = false
   let sawPendingCondition = false
   for (const clause of clausesFrom(body)) {
+    const clauseUncertainty = CLAUSE_UNCERTAINTY.test(clause)
     const pendingCondition = PENDING_CONDITION.test(clause)
-    if (pendingCondition) sawPendingCondition = true
+    if (pendingCondition && !clauseUncertainty) sawPendingCondition = true
 
     const explicitBlock = EXPLICIT_VETO_PATTERN.test(clause)
       || (!NON_BLOCKING_PATTERN.test(clause)
@@ -73,7 +74,7 @@ function classifyTextIntent(body, headOid) {
     // A veto in the same clause always wins. Questions and conditional
     // approvals are not an explicit current-head release.
     if (!explicitBlock
-      && !CLAUSE_UNCERTAINTY.test(clause)
+      && !clauseUncertainty
       && !pendingCondition
       && APPROVAL_PATTERN.test(clause)
       && referencesHead(clause, headOid)) {

@@ -317,6 +317,10 @@ test('条件性放行无论分句顺序都不能解除人工阻止', () => {
     `可以合并 ${headOid.slice(0, 7)}，但需要先修复迁移状态`,
     `OK to merge ${headOid.slice(0, 7)}, but the migration must be fixed first`,
     `The migration must be fixed before merge. LGTM ${headOid.slice(0, 7)}`,
+    `LGTM ${headOid.slice(0, 7)} after the migration is fixed`,
+    `LGTM ${headOid.slice(0, 7)} when the tests pass`,
+    `After the migration is fixed. LGTM ${headOid.slice(0, 7)}`,
+    `LGTM ${headOid.slice(0, 7)}. Once the migration is resolved.`,
   ]) {
     const result = evaluateManualBlockers({
       headOid,
@@ -388,19 +392,23 @@ test('同一分句的显式 veto 优先于 current-head approval', () => {
 })
 
 test('无关疑问不会污染独立的 current-head 放行', () => {
-  const result = evaluateManualBlockers({
-    headOid,
-    comments: [
-      {
-        login: 'reviewer', permission: 'write', body: 'Do not merge.',
-        created_at: '2026-08-24T00:00:00Z',
-      },
-      {
-        login: 'reviewer', permission: 'write',
-        body: `LGTM ${headOid.slice(0, 7)}. What happens after deployment?`,
-        created_at: '2026-08-24T00:01:00Z',
-      },
-    ],
-  })
-  assert.equal(result.satisfied, true)
+  for (const body of [
+    `LGTM ${headOid.slice(0, 7)}. What happens after deployment?`,
+    `LGTM ${headOid.slice(0, 7)}. When is the next release?`,
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    })
+    assert.equal(result.satisfied, true, body)
+  }
 })

@@ -100,6 +100,7 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
   for (const reviewerReply of [
     '我不同意，这仍然阻塞合并。',
     "I don't accept this; it remains a blocker.",
+    'Understood, but this still needs to be fixed before merge.',
   ]) {
     const result = evaluateProductDecisionGate({
       headOid: head,
@@ -111,6 +112,54 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     })
     assert.equal(result.satisfied, false, reviewerReply)
   }
+})
+
+test('reviewer 最新相关 disposition 覆盖较早接受', () => {
+  const candidate = thread({
+    authorReply: '超出本 PR 范围，不改。',
+    reviewerReply: 'Accepted as a separate concern.',
+  })
+  candidate.comments.push({
+    login: 'codex', body: 'I retract that acceptance; this remains a blocker.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [thread({ authorReply: '不在本 PR 处理。' })],
+    reviews: [
+      {
+        login: 'codex', state: 'APPROVED', commit_id: head,
+        submitted_at: '2026-08-25T03:02:00Z',
+      },
+      {
+        login: 'codex', state: 'CHANGES_REQUESTED', commit_id: head,
+        submitted_at: '2026-08-25T03:03:00Z',
+      },
+    ],
+  }).satisfied, false)
+})
+
+test('reviewer 后续明确接受可以覆盖较早拒绝', () => {
+  const candidate = thread({
+    authorReply: '超出本 PR 范围，不改。',
+    reviewerReply: 'This remains a blocker.',
+  })
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
 })
 
 test('作者在 reviewer resolve 后编辑成产品取舍时不能复用旧 resolve', () => {

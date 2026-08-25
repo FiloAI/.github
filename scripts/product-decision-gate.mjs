@@ -11,10 +11,10 @@ const NEGATED_PRODUCT_DEFERRAL_PATTERN =
   /(?:不是|并非|并不是)\s*(?:产品(?:决定|决策|取舍)|不改|不修|暂不处理|超出(?:本\s*PR\s*)?范围)|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?(?:product\s+(?:decision|trade-?off)|out\s+of\s+scope|defer(?:red)?)\b/gi
 
 const REVIEWER_ACCEPTANCE_PATTERN =
-  /(?:接受|同意|理解|不再阻塞|不阻塞|非阻塞|撤回|可以另开|单独处理)|\b(?:accept(?:ed)?|agree(?:d)?|understood|makes?\s+sense|not\s+a\s+blocker|non-?blocking|withdraw(?:n)?|separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
+  /(?:接受|同意|不再阻塞|不阻塞|非阻塞|撤回|可以另开|单独处理)|\b(?:accept(?:ed)?|agree(?:d)?|makes?\s+sense|not\s+a\s+blocker|non-?blocking|withdraw(?:n)?|separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
 
 const REVIEWER_REJECTION_PATTERN =
-  /(?:不接受|不同意|不理解|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:still|remains?)\s+(?:a\s+)?blocker\b/i
+  /(?:不接受|不同意|不理解|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|合并前仍需|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
 
 function sameHead(value, headOid) {
   return String(value || '').toLowerCase() === String(headOid || '').toLowerCase()
@@ -31,6 +31,10 @@ function commentTime(comment) {
 function isExplicitReviewerAcceptance(body) {
   const value = String(body || '')
   return REVIEWER_ACCEPTANCE_PATTERN.test(value) && !REVIEWER_REJECTION_PATTERN.test(value)
+}
+
+function isExplicitReviewerRejection(body) {
+  return REVIEWER_REJECTION_PATTERN.test(String(body || ''))
 }
 
 function isProductDeferral(body) {
@@ -70,19 +74,37 @@ export function normalizeProductDecisionThread(thread) {
 function isReviewerAcceptance({ thread, reviewerLogin, deferralIndex, reviews, headOid }) {
   const deferral = thread.comments[deferralIndex]
   const deferralAt = commentTime(deferral) || Number.MAX_SAFE_INTEGER
+  const dispositions = []
+  let index = 0
 
-  if (thread.comments.slice(deferralIndex + 1).some((comment) => (
-    String(comment.login || '').toLowerCase() === reviewerLogin
-      && commentTime(comment) >= deferralAt
-      && isExplicitReviewerAcceptance(comment.body)
-  ))) return true
+  for (const comment of thread.comments.slice(deferralIndex + 1)) {
+    index++
+    if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
+    const at = commentTime(comment)
+    if (at < deferralAt) continue
+    if (isExplicitReviewerRejection(comment.body)) {
+      dispositions.push({ disposition: 'reject', at, index })
+    } else if (isExplicitReviewerAcceptance(comment.body)) {
+      dispositions.push({ disposition: 'accept', at, index })
+    }
+  }
 
-  return reviews.some((review) => (
-    String(review.login || '').toLowerCase() === reviewerLogin
-      && String(review.state || '').toUpperCase() === 'APPROVED'
-      && sameHead(review.commit_id, headOid)
-      && eventTime(review.submitted_at) >= deferralAt
-  ))
+  for (const review of reviews) {
+    index++
+    if (String(review.login || '').toLowerCase() !== reviewerLogin
+      || !sameHead(review.commit_id, headOid)) continue
+    const at = eventTime(review.submitted_at)
+    if (at < deferralAt) continue
+    const state = String(review.state || '').toUpperCase()
+    if (state === 'CHANGES_REQUESTED') {
+      dispositions.push({ disposition: 'reject', at, index })
+    } else if (state === 'APPROVED') {
+      dispositions.push({ disposition: 'accept', at, index })
+    }
+  }
+
+  dispositions.sort((left, right) => left.at - right.at || left.index - right.index)
+  return dispositions.at(-1)?.disposition === 'accept'
 }
 
 function ownerDecisionEvidence({ authorLogin, headOid, after, reviews, comments }) {

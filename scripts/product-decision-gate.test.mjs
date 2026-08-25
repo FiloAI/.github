@@ -30,6 +30,20 @@ test('live GitHub 字段归一化保留 created/updated 时间', () => {
   }), {
     login: 'jerboy', body: 'approved',
     created_at: '2026-08-25T03:00:00Z', updated_at: '2026-08-25T03:01:00Z',
+    edits: [], edits_complete: true,
+  })
+  assert.deepEqual(normalizeProductDecisionIssueComment({
+    author: { login: 'jerboy' }, body: 'approved after edit',
+    createdAt: '2026-08-25T03:00:00Z', updatedAt: '2026-08-25T03:02:00Z',
+    userContentEdits: {
+      pageInfo: { hasNextPage: false },
+      nodes: [{ editedAt: '2026-08-25T03:02:00Z', diff: 'approved after edit' }],
+    },
+  }), {
+    login: 'jerboy', body: 'approved after edit',
+    created_at: '2026-08-25T03:00:00Z', updated_at: '2026-08-25T03:02:00Z',
+    edits: [{ edited_at: '2026-08-25T03:02:00Z', diff: 'approved after edit' }],
+    edits_complete: true,
   })
   assert.deepEqual(normalizeProductDecisionThread({
     isResolved: true, isOutdated: false, resolvedBy: { login: 'codex' },
@@ -388,6 +402,8 @@ test('reviewer 直接要求合并前修复会撤回较早 acceptance', () => {
 
 test('reviewer 明确反对 separate-concern 处理不能命中 acceptance', () => {
   for (const rejection of [
+    'I disagree that this is a separate concern; fix it.',
+    'I disagree with treating this as a separate concern.',
     'I reject treating this as a separate concern.',
     'I object to treating this as a separate concern.',
     'I refuse to accept this as a separate concern.',
@@ -411,6 +427,14 @@ test('reviewer 明确反对 separate-concern 处理不能命中 acceptance', () 
     threads: [thread({
       authorReply: 'Out of scope; defer to a follow-up PR.',
       reviewerReply: "I don't object to treating this as a separate concern.",
+    })],
+  }).satisfied, true)
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [thread({
+      authorReply: 'Out of scope; defer to a follow-up PR.',
+      reviewerReply: "I don't disagree that this is a separate concern.",
     })],
   }).satisfied, true)
 })
@@ -1635,6 +1659,7 @@ test('同秒单边或不完整编辑证据仍保留历史 deferral', () => {
   for (const edit of [
     { edits_complete: true, edits: [{ diff: '@@ -1 +1 @@\n+Fixed and covered by regression tests.' }] },
     { edits_complete: true, edits: [{ diff: '+Fixed and covered by regression tests.' }] },
+    { edits_complete: true, edits: [{ diff: 'Fixed and covered by regression tests.' }] },
     { edits_complete: true, edits: [{ diff: '' }] },
     { edits_complete: false, edits: [{ diff: '@@ -1 +1 @@\n+Fixed and covered by regression tests.' }] },
   ]) {
@@ -2100,6 +2125,69 @@ test('owner marker 必须晚于编辑后的产品取舍', () => {
       comments: [{ login: 'jerboy', body: ownerApprovalMarker(head), created_at }],
     })
     assert.equal(result.satisfied, created_at.endsWith('06:00Z'), created_at)
+  }
+})
+
+test('owner marker 的无关编辑不能刷新批准时间', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  const marker = ownerApprovalMarker(head)
+
+  for (const comment of [
+    {
+      login: 'jerboy', body: marker,
+      created_at: '2026-08-25T03:00:00Z', updated_at: '2026-08-25T03:02:00Z',
+    },
+    {
+      login: 'jerboy', body: `${marker}\nUpdated punctuation.`,
+      created_at: '2026-08-25T03:00:00Z', updated_at: '2026-08-25T03:02:00Z',
+      edits: [{ edited_at: '2026-08-25T03:02:00Z', body: `${marker}\nUpdated punctuation.` }],
+      edits_complete: true,
+    },
+    {
+      login: 'jerboy', body: marker,
+      created_at: '2026-08-25T03:00:00Z', updated_at: '2026-08-25T03:02:00Z',
+      edits: [{ edited_at: '2026-08-25T03:02:00Z', body: marker }],
+      edits_complete: false,
+    },
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+      comments: [comment],
+    }).satisfied, false, JSON.stringify(comment))
+  }
+})
+
+test('owner marker 只有编辑历史证明后置新增时才能放行', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  const marker = ownerApprovalMarker(head)
+  for (const comment of [
+    {
+      login: 'jerboy', body: `Decision recorded.\n${marker}`,
+      created_at: '2026-08-25T03:00:00Z', updated_at: '2026-08-25T03:02:00Z',
+      edits: [
+        { edited_at: '2026-08-25T03:00:30Z', body: 'Decision pending.' },
+        { edited_at: '2026-08-25T03:02:00Z', body: `Decision recorded.\n${marker}` },
+      ],
+      edits_complete: true,
+    },
+    {
+      login: 'jerboy', body: `Decision recorded.\n${marker}`,
+      created_at: '2026-08-25T03:00:00Z', updated_at: '2026-08-25T03:02:00Z',
+      edits: [{
+        edited_at: '2026-08-25T03:02:00Z',
+        diff: `@@ -1 +1,2 @@\n-Decision pending.\n+Decision recorded.\n+${marker}`,
+      }],
+      edits_complete: true,
+    },
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+      comments: [comment],
+    }).satisfied, true, JSON.stringify(comment))
   }
 })
 

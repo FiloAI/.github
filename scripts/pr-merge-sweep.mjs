@@ -333,6 +333,26 @@ function reviewThreadSnapshot(repo, prNumber) {
   return nodes.map(normalizeProductDecisionThread)
 }
 
+function productDecisionCommentSnapshot(repo, prNumber) {
+  const [owner, name] = repo.split('/')
+  const q = `query($endCursor: String) { repository(owner: "${owner}", name: "${name}") {
+    pullRequest(number: ${prNumber}) { comments(first: 100, after: $endCursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        body createdAt updatedAt author { login }
+        userContentEdits(first: 25) {
+          pageInfo { hasNextPage }
+          nodes { editedAt diff }
+        }
+      }
+    } } } }`
+  const pages = ghJsonPaginated(['api', 'graphql', '-f', `query=${q}`])
+  const nodes = pages.flatMap((page) => (
+    page.data.repository.pullRequest.comments.nodes
+  ))
+  return nodes.map(normalizeProductDecisionIssueComment)
+}
+
 function productDecisionGate(repo, pr, threads) {
   try {
     const reviews = ghJsonPaginated([
@@ -344,9 +364,7 @@ function productDecisionGate(repo, pr, threads) {
       commit_id: review.commit_id || '',
       submitted_at: review.submitted_at,
     }))
-    const comments = ghJsonPaginated([
-      'api', `repos/${repo}/issues/${pr.number}/comments`,
-    ]).map(normalizeProductDecisionIssueComment)
+    const comments = productDecisionCommentSnapshot(repo, pr.number)
     return evaluateProductDecisionGate({
       headOid: pr.headRefOid,
       authorLogin: pr.author?.login || '',

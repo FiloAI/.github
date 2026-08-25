@@ -365,9 +365,13 @@ test('跨 PR 前置条件不能解除当前 PR 的人工阻止', () => {
     `PR #123 must be fixed before merge. LGTM ${headOid.slice(0, 7)}.`,
     `PR #123 must be fixed first. LGTM ${headOid.slice(0, 7)}.`,
     `PR #123 must be merged first. LGTM ${headOid.slice(0, 7)}.`,
+    `PR #123 must merge before we merge. LGTM ${headOid.slice(0, 7)}.`,
+    `PR #123 must be merged before we can merge this. LGTM ${headOid.slice(0, 7)}.`,
+    `LGTM ${headOid.slice(0, 7)}. PR #123 has to merge before the team can merge.`,
     `等 PR #123 修复后，可以合并 ${headOid.slice(0, 7)}。`,
     `PR #123 修好才能合并。LGTM ${headOid.slice(0, 7)}。`,
     `先合并 PR #123，当前 PR 才能合并 ${headOid.slice(0, 7)}。`,
+    `PR #123 必须在我们合并本 PR 前完成。LGTM ${headOid.slice(0, 7)}。`,
   ]) {
     const result = evaluateManualBlockers({
       headOid,
@@ -384,6 +388,45 @@ test('跨 PR 前置条件不能解除当前 PR 的人工阻止', () => {
       ],
     })
     assert.equal(result.satisfied, false, body)
+  }
+})
+
+test('已解决或历史 blocker 说明不会生成新的持久 veto', () => {
+  for (const body of [
+    'The release blocker is fixed.',
+    'The functionality blocker has been resolved.',
+    'The merge blocker was cleared yesterday.',
+    'We resolved the release blocker.',
+    '发布阻断已经修复。',
+    '功能阻塞现已解除。',
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    }).satisfied, true, body)
+  }
+})
+
+test('未解决 blocker 和 resolved 后的新 veto 仍保持 fail-closed', () => {
+  for (const body of [
+    'The release blocker is not fixed.',
+    'The functionality blocker has not been resolved.',
+    '发布阻断尚未修复。',
+    'The release blocker is fixed, but do not merge.',
+    '功能阻断已解决，但当前不要合并。',
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    })
+    assert.equal(result.satisfied, false, body)
+    assert.deepEqual(result.blockers, ['reviewer'], body)
   }
 })
 

@@ -25,7 +25,7 @@ const STANDALONE_APPROVAL_CONDITION =
   /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b[^.。！？!?；;\n]{0,100}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|safe|healthy|done)\b|\bbefore\s+(?:merge|merging)\b|^(?:如果|若|待|等到|需要先|必须先|先)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|\b(?:must|needs?\s+to|has\s+to)\b[^。！？!?；;\n]{0,80}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:s|ed|ing)?\s*off|approve(?:d)?|succeed(?:s|ed|ing)?|green|ready|done|before\s+(?:merge|merging))\b/i
 
 const CROSS_PR_PREREQUISITE =
-  /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:this\s+)?(?:merge|merging)\b|\b(?:fixed|resolved|completed|approved|green|ready|done|merged)\s+first\b|^(?:如果|若|待|等到)[^。！？!?；;\n]{0,100}|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿|合并)后|先[^。！？!?；;\n]{0,80}合并|才能(?:合并|merge)/i
+  /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:this\s+)?(?:merge|merging)\b|\bbefore\s+(?:(?:we|i|you|they|maintainers?|the\s+team)\s+(?:can\s+|may\s+|should\s+|will\s+)?merge\b|(?:we|i|you|they)\s+merge\b|(?:this|the\s+current)\s+(?:pr|pull\s+request)\s+(?:can\s+|may\s+|should\s+|will\s+)?(?:merge|be\s+merged)\b)|\b(?:fixed|resolved|completed|approved|green|ready|done|merged)\s+first\b|^(?:如果|若|待|等到)[^。！？!?；;\n]{0,100}|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿|合并)后|先[^。！？!?；;\n]{0,80}合并|(?:在)?(?:我们|我|维护者|团队)合并(?:本|当前)?(?:\s*PR)?前|才能(?:合并|merge)/i
 
 const INDEPENDENT_FOLLOWUP_OFFER = [
   /^if\s+(?:useful|helpful|desired|wanted|needed)\s*,?\s*(?:i|we)\s+(?:can|could|will|would)\b[^,，。！？!?；;\n]{0,160}[.]?$/i,
@@ -35,6 +35,9 @@ const INDEPENDENT_FOLLOWUP_OFFER = [
 
 const NON_BLOCKING_PATTERN =
   /(?:不能|不会|不应|不得)[^。！？!\n]{0,16}(?:阻塞|阻断|卡住|拦截)[^。！？!\n]{0,8}(?:合并|merge)|(?:不|未)(?:是|属于|构成|算作)[^。！？!\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b/i
+
+const RESOLVED_BLOCKER_PATTERN =
+  /\b(?:merge|release|functionality)\s+blocker\b[^.。！？!?\n]{0,32}\b(?:is|was|has\s+been|had\s+been)\s+(?:already\s+|now\s+)?(?:fixed|resolved|cleared|removed)\b|\b(?:fixed|resolved|cleared|removed)\b[^.。！？!?\n]{0,32}\b(?:the\s+)?(?:merge|release|functionality)\s+blocker\b|(?:合并|发布|功能)(?:阻断|阻塞)[^。！？!?\n]{0,24}(?:已|已经|现已)(?:修复|解决|解除|清除)|(?:已|已经|现已)(?:修复|解决|解除|清除)[^。！？!?\n]{0,24}(?:合并|发布|功能)(?:阻断|阻塞)/i
 
 const STEWARD_MARKERS = [
   'merge-steward-verdict:',
@@ -106,10 +109,10 @@ function isPendingReleaseCondition(text, prNumber) {
 }
 
 function withoutNonBlockingSignals(text) {
-  const flags = NON_BLOCKING_PATTERN.flags.includes('g')
-    ? NON_BLOCKING_PATTERN.flags
-    : `${NON_BLOCKING_PATTERN.flags}g`
-  return String(text || '').replace(new RegExp(NON_BLOCKING_PATTERN.source, flags), ' ')
+  return [NON_BLOCKING_PATTERN, RESOLVED_BLOCKER_PATTERN].reduce((value, pattern) => {
+    const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`
+    return value.replace(new RegExp(pattern.source, flags), ' ')
+  }, String(text || ''))
 }
 
 function classifyTextIntent(body, headOid, prNumber) {

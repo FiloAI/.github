@@ -244,6 +244,23 @@ test('辅助产物无需改动不能覆盖明确的实现修复', () => {
   }
 })
 
+test('否定 follow-up 或 separate PR 不会误记为产品延期', () => {
+  for (const authorReply of [
+    'No follow-up issue is needed; fixed here.',
+    'We do not need a separate PR; fixed in this PR.',
+    'A follow-up pull request is not required; fixed here.',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply,
+        reviewerReply: 'Confirmed fixed and resolved.',
+      })],
+    }).satisfied, true, authorReply)
+  }
+})
+
 test('reviewer 最新相关 disposition 覆盖较早接受', () => {
   const candidate = thread({
     authorReply: '超出本 PR 范围，不改。',
@@ -1527,6 +1544,40 @@ test('不完整、空或单边 patch 编辑保持 fail-closed', () => {
       authorLogin: 'author',
       threads: [candidate],
     }).satisfied, false, JSON.stringify(edit))
+  }
+})
+
+test('deferral 编辑为 fixed 时单边或不完整历史仍保留 latestDeferral', () => {
+  for (const edit of [
+    { edits_complete: true, edits: [{ diff: '@@ -1 +1 @@\n+Fixed and covered by regression tests.' }] },
+    { edits_complete: true, edits: [{ diff: '+Fixed and covered by regression tests.' }] },
+    { edits_complete: true, edits: [{ diff: '' }] },
+    { edits_complete: false, edits: [{ diff: '@@ -1 +1 @@\n+Fixed and covered by regression tests.' }] },
+  ]) {
+    const candidate = thread({
+      authorReply: 'Fixed and covered by regression tests.',
+      reviewerReply: null,
+    })
+    candidate.comments[1] = {
+      ...candidate.comments[1],
+      updated_at: '2026-08-25T03:03:00Z',
+      ...edit,
+    }
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, false, JSON.stringify(edit))
+
+    candidate.comments.push({
+      login: 'codex', body: 'Confirmed fixed and resolved.',
+      created_at: '2026-08-25T03:04:00Z',
+    })
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, true, JSON.stringify(edit))
   }
 })
 

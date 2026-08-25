@@ -13,6 +13,9 @@ const PRODUCT_DEFERRAL_PATTERN =
 const NEGATED_PRODUCT_DEFERRAL_PATTERN =
   /(?:不是|并非|并不是)\s*(?:产品(?:决定|决策|取舍)|不改|不修|暂不处理|超出(?:本\s*PR\s*)?范围)|\b(?:is\s+not|isn't|was\s+not|wasn't|not)\s+(?:a\s+)?(?:product\s+(?:decision|trade-?off)|by\s+design|expected\s+behavio(?:u)?r|out\s+of\s+scope|defer(?:red)?)\b|\b(?:do\s+not|don't|should\s+not|shouldn't|cannot|can't|won't|not)\s+keep(?:\s+(?:this|it))?\s+as[-\s]+is\b/gi
 
+const NEGATED_FOLLOW_UP_DEFERRAL_PATTERN =
+  /\b(?:no\s+(?:(?:follow-?up|separate)\s+(?:pr|pull\s+request|issue))\s+(?:is\s+)?(?:needed|required|necessary)|(?:i|we|this|it)\s+(?:(?:do|does)\s+not|don['’]t|doesn['’]t)\s+(?:need|require)\s+(?:a\s+)?(?:(?:follow-?up|separate)\s+(?:pr|pull\s+request|issue))|(?:a\s+)?(?:(?:follow-?up|separate)\s+(?:pr|pull\s+request|issue))\s+(?:is|are)\s+not\s+(?:needed|required|necessary))\b/gi
+
 const INTENDED_BEHAVIOR_DEFERRAL_PATTERN =
   /\b(?:working\s+as\s+intended|intended\s+behavio(?:u)?r)\b/i
 
@@ -127,13 +130,11 @@ function patchEdit(value) {
   const lines = String(value || '').split('\n')
   const before = []
   const after = []
-  let hasHunk = false
   for (const line of lines) {
-    if (/^@@(?:\s|$)/.test(line)) hasHunk = true
-    else if (/^-(?!---)/.test(line)) before.push(line.slice(1))
+    if (/^-(?!---)/.test(line)) before.push(line.slice(1))
     else if (/^\+(?!\+\+)/.test(line)) after.push(line.slice(1))
   }
-  if (!hasHunk && (before.length === 0 || after.length === 0)) return null
+  if (before.length === 0 && after.length === 0) return null
   return {
     type: 'patch',
     before: before.join('\n'),
@@ -165,12 +166,10 @@ function hasOpaqueDispositionEdit(comment) {
   if (comment?.edits_complete === false) return true
   const entries = editEntries(comment)
   if (entries.length === 0) return true
-  const currentKind = authorDispositionKind(comment.body)
-  return entries.every((entry) => {
+  return entries.some((entry) => {
     if (entry.type === 'empty') return true
     if (entry.type === 'patch') {
-      if (authorDispositionKind(entry.before) || authorDispositionKind(entry.after)) return false
-      return !entry.complete && !currentKind
+      return !entry.complete
     }
     if (authorDispositionKind(entry.body)) return false
     return isLikelyPatchFragment(entry.body, comment.body, authorDispositionKind)
@@ -339,6 +338,7 @@ function authorDispositionEvents(comment, index) {
 function isProductDeferral(body) {
   const value = String(body || '')
     .replace(NEGATED_PRODUCT_DEFERRAL_PATTERN, ' ')
+    .replace(NEGATED_FOLLOW_UP_DEFERRAL_PATTERN, ' ')
     .replace(NEGATED_INTENDED_BEHAVIOR_PATTERN, ' ')
   return PRODUCT_DEFERRAL_PATTERN.test(value)
     || INTENDED_BEHAVIOR_DEFERRAL_PATTERN.test(value)

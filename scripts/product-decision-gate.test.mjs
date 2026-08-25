@@ -196,6 +196,9 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     'The objection has not been withdrawn.',
     '我无法确认已经修复。',
     '我尚未核实问题已解决。',
+    "I'm not accepting this as a separate concern.",
+    "We're not agreeing to this deferral.",
+    'I am not accepting this as a separate issue.',
   ]) {
     const result = evaluateProductDecisionGate({
       headOid: head,
@@ -1834,6 +1837,32 @@ test('长纯正文单边编辑无法证明历史时保守保留 deferral', () =>
   }).satisfied, true)
 })
 
+test('无 disposition 的 opaque 中性正文不能凭空制造产品取舍', () => {
+  for (const [body, diff] of [
+    [
+      'Clarified the reply after the discussion.',
+      'The earlier response contained context that is no longer relevant to the implementation details.',
+    ],
+    [
+      'The implementation now uses the validated cache key.',
+      'The implementation previously used the request path directly.',
+    ],
+  ]) {
+    const candidate = thread({ authorReply: body, reviewerReply: null })
+    candidate.comments[1] = {
+      ...candidate.comments[1],
+      updated_at: '2026-08-25T03:03:00Z',
+      edits: [{ diff }],
+      edits_complete: true,
+    }
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, true, body)
+  }
+})
+
 test('作者编辑删除 deferral 措辞仍保留产品取舍门', () => {
   const candidate = thread({
     authorReply: 'Clarified the reply.',
@@ -2404,6 +2433,12 @@ test('not going to fix 或 address 是明确产品取舍延期', () => {
     "I'm not going to be fixing this.",
     'We do not plan to be addressing this.',
     'We have no plans to be resolving this.',
+    "We're not fixing this.",
+    'We are not addressing this.',
+    "I'm not resolving this in this PR.",
+    'WE ARE NOT FIXING THIS.',
+    'We are not addressing the issue.',
+    'We are not fixing this because it is out of scope.',
     'This will not be fixed in this PR.',
     "We won't change this.",
     'I will not change it.',
@@ -2454,6 +2489,10 @@ test('积极进行中的当前修复不是 no-fix disposition', () => {
     "We won't change this test; fixed the implementation.",
     "We won't change this documentation; fixed the behavior.",
     'We are leaving this fixture unchanged; fixed the implementation.',
+    "We're not fixing this test; fixed the implementation.",
+    'We are not addressing this documentation; fixed the behavior.',
+    'We are not fixing the issue template; fixed the implementation.',
+    'We are not addressing the finding metadata; fixed the behavior.',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,

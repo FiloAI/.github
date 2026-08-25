@@ -37,6 +37,12 @@ const REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN =
 const REVIEWER_REJECTION_PATTERN =
   /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|(?:不能|无法|不可|尚未|未能)\s*(?:确认|核实)[^。！？!?\n]{0,24}(?:已|已经)?(?:修复|处理|解决)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|(?:不能|不可|不得)\s*单独处理|(?:不认为|不能认为|并非|不是)[^。！？!?\n]{0,24}(?:非阻塞|不阻塞)|(?:必须|需要|应该|应当)\s*在本\s*PR\s*(?:修复|处理|解决)|合并前(?:仍需|请|必须)?[^。！？!?\n]{0,24}(?:修复|处理|解决)|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw|confirm|verify)\b|\b(?:have|has|had)\s+not\s+(?:confirmed|verified)\b|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:consider|regard|treat|view)\b[^.。！？!?\n]{0,48}\bnon-?blocking\b|\b(?:is|are)\s+not\s+non-?blocking\b|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?separate\s+(?:concern|issue|pr)\b|\b(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+in\s+this\s+(?:pr|pull\s+request)\b|\b(?:please\s+)?(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+before\s+(?:merge|merging)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
 
+const REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN =
+  /\b(?:reject(?:s|ed|ing)?|object(?:s|ed|ing)?\s+to)\b[^.。！？!?\n]{0,80}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr))\b/i
+
+const NEGATED_REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN =
+  /\b(?:(?:do|does|did)\s+not|don['’]t|doesn['’]t|didn['’]t|never)\s+(?:reject|object)\b/i
+
 const NEGATED_REVIEWER_WITHDRAWAL_PATTERN =
   /\b(?:(?:have|has|had)\s+not|haven['’]t|hasn['’]t|hadn['’]t)\s+(?:withdrawn|retracted)\b[^.。！？!?\n]{0,40}\b(?:blocker|objection|concern|request\s+for\s+changes)\b|\b(?:(?:do|does|did)\s+not|don['’]t|doesn['’]t|didn['’]t)\s+(?:withdraw|retract)\b[^.。！？!?\n]{0,40}\b(?:blocker|objection|concern|request\s+for\s+changes)\b|\b(?:blocker|objection|concern|request\s+for\s+changes)\b[^.。！？!?\n]{0,40}\b(?:(?:has|had)\s+not|hasn['’]t|hadn['’]t)\s+been\s+(?:withdrawn|retracted)\b/i
 
@@ -235,6 +241,8 @@ function reviewerAcceptanceKind(body) {
 function isExplicitReviewerRejection(body) {
   const value = String(body || '')
   return REVIEWER_REJECTION_PATTERN.test(value)
+    || (REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN.test(value)
+      && !NEGATED_REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN.test(value))
     || NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(value)
 }
 
@@ -477,7 +485,17 @@ function latestReviewerDisposition({
   const originalBoundary = Math.max(evidenceCreatedAt, highFindingAt || 0)
   const effectiveBoundary = Math.max(evidenceAt || evidenceCreatedAt, highFindingAt || 0)
   const dispositions = []
-  const reviewOrderById = new Map(reviews.map((review, index) => [String(review.id || ''), index]))
+  const reviewById = new Map(reviews.map((review, index) => [
+    String(review.id || ''),
+    { review, index },
+  ]))
+  const threadReviewOrder = (comment, at) => {
+    const linked = reviewById.get(String(comment.review_id || ''))
+    if (!linked
+      || !sameHead(linked.review.commit_id, headOid)
+      || eventTime(linked.review.submitted_at) !== at) return undefined
+    return linked.index
+  }
 
   for (const [index, comment] of thread.comments.entries()) {
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
@@ -488,7 +506,7 @@ function latestReviewerDisposition({
         dispositions.push({
           disposition: 'reject', at,
           source: 'thread',
-          reviewOrder: reviewOrderById.get(String(comment.review_id || '')),
+          reviewOrder: threadReviewOrder(comment, at),
           index,
           semanticEdit,
         })
@@ -513,7 +531,7 @@ function latestReviewerDisposition({
         dispositions.push({
           disposition: 'accept', at,
           source: 'thread',
-          reviewOrder: reviewOrderById.get(String(comment.review_id || '')),
+          reviewOrder: threadReviewOrder(comment, at),
           index,
           semanticEdit,
         })

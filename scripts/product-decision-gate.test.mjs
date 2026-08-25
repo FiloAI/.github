@@ -363,6 +363,31 @@ test('reviewer 直接要求合并前修复会撤回较早 acceptance', () => {
   }
 })
 
+test('reviewer 明确反对 separate-concern 处理不能命中 acceptance', () => {
+  for (const rejection of [
+    'I reject treating this as a separate concern.',
+    'I object to treating this as a separate concern.',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply: rejection,
+      })],
+    }).satisfied, false, rejection)
+  }
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [thread({
+      authorReply: 'Out of scope; defer to a follow-up PR.',
+      reviewerReply: "I don't object to treating this as a separate concern.",
+    })],
+  }).satisfied, true)
+})
+
 test('编辑旧 acceptance 不能覆盖后续 rejection', () => {
   const candidate = thread({
     authorReply: '超出本 PR 范围，不改。',
@@ -1022,6 +1047,28 @@ test('同秒 APPROVED 与 thread rejection 以阻塞 disposition 为准', () => 
     authorLogin: 'author',
     threads: [candidate],
     reviews: [{
+      login: 'codex', state: 'APPROVED', commit_id: head,
+      submitted_at: '2026-08-25T03:02:00Z',
+    }],
+  }).satisfied, false)
+})
+
+test('旧 review 的序号不能让同秒 current-head APPROVED 覆盖 thread rejection', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  candidate.comments.push({
+    login: 'codex', body: 'This remains a blocker.',
+    created_at: '2026-08-25T03:02:00Z', review_id: 101,
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    reviews: [{
+      id: 101,
+      login: 'codex', state: 'COMMENTED', commit_id: 'old-head',
+      submitted_at: '2026-08-25T02:00:00Z',
+    }, {
+      id: 102,
       login: 'codex', state: 'APPROVED', commit_id: head,
       submitted_at: '2026-08-25T03:02:00Z',
     }],

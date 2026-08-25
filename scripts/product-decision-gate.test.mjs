@@ -105,6 +105,7 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     'I no longer agree.',
     'I withdraw my acceptance.',
     'Understood, but this still needs to be fixed before merge.',
+    'This is not a separate concern; please address it in this PR.',
   ]) {
     const result = evaluateProductDecisionGate({
       headOid: head,
@@ -436,6 +437,23 @@ test('同秒 APPROVED 与 thread rejection 以阻塞 disposition 为准', () => 
   }).satisfied, false)
 })
 
+test('同秒 CHANGES_REQUESTED 后的 thread acceptance 按跨来源事件顺序放行', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    reviews: [{
+      login: 'codex', state: 'CHANGES_REQUESTED', commit_id: head,
+      submitted_at: '2026-08-25T03:02:00Z',
+    }],
+  }).satisfied, true)
+})
+
 test('同秒 thread comments 使用可靠顺序决定最终 disposition', () => {
   const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
   candidate.comments.push(
@@ -486,6 +504,33 @@ test('编辑既有 deferral 保留 reviewer acceptance，后续 rejection 仍可
     authorLogin: 'author',
     threads: [candidate],
   }).satisfied, false)
+})
+
+test('作者把 fixed claim 编辑为 deferral 后不能复用旧修复确认', () => {
+  const candidate = thread({
+    authorReply: '已修复并补了回归测试。',
+    reviewerReply: 'Confirmed fixed and resolved.',
+  })
+  candidate.comments[1] = {
+    ...candidate.comments[1],
+    body: 'Out of scope; defer to a follow-up PR.',
+    updated_at: '2026-08-25T03:03:00Z',
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:04:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
 })
 
 test('普通以后修措辞属于产品取舍延期', () => {

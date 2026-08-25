@@ -16,14 +16,25 @@ const NEGATED_PRODUCT_DEFERRAL_PATTERN =
 const REVIEWER_ACCEPTANCE_PATTERN =
   /(?:接受|同意)[^。！？!?\n]{0,32}(?:延期|取舍|范围(?:说明)?|另开|后续处理|单独处理)|(?:确认|核实)[^。！？!?\n]{0,24}(?:已|已经)(?:修复|处理|解决)|不再阻塞|不阻塞|非阻塞|撤回(?:阻止|阻塞|反对|异议)|可以另开|单独处理|\b(?:accept(?:ed)?|agree(?:d)?)\b[^.。！？!?\n]{0,40}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr))\b|\b(?:confirm(?:ed)?|verif(?:y|ied))\b[^.。！？!?\n]{0,32}\b(?:fixed|addressed|resolved)\b|\bmakes?\s+sense\b[^.。！？!?\n]{0,40}\b(?:scope|separate|follow-?up)\b|\b(?:not\s+a\s+blocker|non-?blocking|withdraw(?:n)?\s+(?:the\s+)?(?:blocker|objection|concern|request\s+for\s+changes)|separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
 
+const REVIEWER_FIXED_ACCEPTANCE_PATTERN =
+  /(?:确认|核实)[^。！？!?\n]{0,24}(?:已|已经)(?:修复|处理|解决)|\b(?:confirm(?:ed)?|verif(?:y|ied))\b[^.。！？!?\n]{0,32}\b(?:fixed|addressed|resolved)\b/i
+
+const REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN =
+  /(?:接受|同意)[^。！？!?\n]{0,32}(?:延期|取舍|范围(?:说明)?|另开|后续处理|单独处理)|可以另开|单独处理|\b(?:accept(?:ed)?|agree(?:d)?)\b[^.。！？!?\n]{0,40}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr))\b|\bmakes?\s+sense\b[^.。！？!?\n]{0,40}\b(?:scope|separate|follow-?up)\b|\b(?:separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
+
 const REVIEWER_REJECTION_PATTERN =
-  /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|合并前仍需|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
+  /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|合并前仍需|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?separate\s+(?:concern|issue|pr)\b|\b(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+in\s+this\s+(?:pr|pull\s+request)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
 
 const NEGATED_FINDING_FIXED_PATTERN =
   /(?:未|尚未|没有|并未|还没)(?:修复|处理|解决|改好|补(?:上|回归)?测试)|\b(?:not|isn't|is\s+not|wasn't|was\s+not|aren't|are\s+not|weren't|were\s+not|haven't|have\s+not|hasn't|has\s+not|hadn't|had\s+not|never)\s+(?:been\s+)?(?:fixed|addressed|resolved|implemented)\b/i
+
+const DISPOSITION_SOURCE_ORDER = {
+  review: 0,
+  thread: 1,
+}
 
 function sameHead(value, headOid) {
   return String(value || '').toLowerCase() === String(headOid || '').toLowerCase()
@@ -44,6 +55,14 @@ function dispositionTime(comment) {
 function isExplicitReviewerAcceptance(body) {
   const value = String(body || '')
   return REVIEWER_ACCEPTANCE_PATTERN.test(value) && !REVIEWER_REJECTION_PATTERN.test(value)
+}
+
+function reviewerAcceptanceKind(body) {
+  const value = String(body || '')
+  if (!isExplicitReviewerAcceptance(value)) return null
+  if (REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN.test(value)) return 'deferral'
+  if (REVIEWER_FIXED_ACCEPTANCE_PATTERN.test(value)) return 'fixed'
+  return 'generic'
 }
 
 function isExplicitReviewerRejection(body) {
@@ -101,21 +120,44 @@ export function normalizeProductDecisionThread(thread) {
   }
 }
 
-function latestReviewerDisposition({ thread, reviewerLogin, afterIndex, notBefore, reviews, headOid }) {
-  const dispositionAt = Math.max(
-    dispositionTime(thread.comments[afterIndex]) || Number.MAX_SAFE_INTEGER,
-    notBefore || 0,
-  )
+function latestReviewerDisposition({
+  thread,
+  reviewerLogin,
+  afterIndex,
+  highFindingAt,
+  evidenceKind,
+  evidenceAt,
+  reviews,
+  headOid,
+}) {
+  const evidenceCreatedAt = dispositionTime(thread.comments[afterIndex]) || Number.MAX_SAFE_INTEGER
+  const originalBoundary = Math.max(evidenceCreatedAt, highFindingAt || 0)
+  const effectiveBoundary = Math.max(evidenceAt || evidenceCreatedAt, highFindingAt || 0)
   const dispositions = []
 
   for (const [offset, comment] of thread.comments.slice(afterIndex + 1).entries()) {
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
     const at = dispositionTime(comment)
-    if (at < dispositionAt) continue
     if (isExplicitReviewerRejection(comment.body)) {
-      dispositions.push({ disposition: 'reject', at, source: 'thread', index: afterIndex + 1 + offset })
-    } else if (isExplicitReviewerAcceptance(comment.body)) {
-      dispositions.push({ disposition: 'accept', at, source: 'thread', index: afterIndex + 1 + offset })
+      if (at >= originalBoundary) {
+        dispositions.push({
+          disposition: 'reject', at,
+          sourceOrder: DISPOSITION_SOURCE_ORDER.thread,
+          index: afterIndex + 1 + offset,
+        })
+      }
+    } else {
+      const acceptanceKind = reviewerAcceptanceKind(comment.body)
+      const preservesDeferralAcceptance = evidenceKind === 'deferral'
+        && acceptanceKind === 'deferral'
+      const boundary = preservesDeferralAcceptance ? originalBoundary : effectiveBoundary
+      if (acceptanceKind && at >= boundary) {
+        dispositions.push({
+          disposition: 'accept', at,
+          sourceOrder: DISPOSITION_SOURCE_ORDER.thread,
+          index: afterIndex + 1 + offset,
+        })
+      }
     }
   }
 
@@ -123,27 +165,32 @@ function latestReviewerDisposition({ thread, reviewerLogin, afterIndex, notBefor
     if (String(review.login || '').toLowerCase() !== reviewerLogin
       || !sameHead(review.commit_id, headOid)) continue
     const at = eventTime(review.submitted_at)
-    if (at < dispositionAt) continue
     const state = String(review.state || '').toUpperCase()
-    if (state === 'CHANGES_REQUESTED') {
-      dispositions.push({ disposition: 'reject', at, source: 'review', index })
-    } else if (state === 'APPROVED') {
-      dispositions.push({ disposition: 'accept', at, source: 'review', index })
+    if (state === 'CHANGES_REQUESTED' && at >= originalBoundary) {
+      dispositions.push({
+        disposition: 'reject', at,
+        sourceOrder: DISPOSITION_SOURCE_ORDER.review,
+        index,
+      })
+    } else if (state === 'APPROVED' && at >= effectiveBoundary) {
+      dispositions.push({
+        disposition: 'accept', at,
+        sourceOrder: DISPOSITION_SOURCE_ORDER.review,
+        index,
+      })
     }
   }
 
   if (dispositions.length === 0) return null
-  const latestAt = Math.max(...dispositions.map((item) => item.at))
-  const sourceLatest = new Map()
-  for (const disposition of dispositions.filter((item) => item.at === latestAt)) {
-    const previous = sourceLatest.get(disposition.source)
-    if (!previous || disposition.index > previous.index) {
-      sourceLatest.set(disposition.source, disposition)
-    }
-  }
-  const latest = [...sourceLatest.values()]
-  if (latest.some((item) => item.disposition === 'reject')) return 'reject'
-  return latest.some((item) => item.disposition === 'accept') ? 'accept' : null
+  // GitHub timestamps are only second-granular here. A thread reply is the
+  // reviewer's more specific follow-up to a formal review, so it wins a tie;
+  // indices preserve the API order within each source.
+  dispositions.sort((left, right) => (
+    left.at - right.at
+      || left.sourceOrder - right.sourceOrder
+      || left.index - right.index
+  ))
+  return dispositions.at(-1).disposition
 }
 
 function ownerDecisionEvidence({ authorLogin, headOid, after, reviews, comments }) {
@@ -227,13 +274,9 @@ export function evaluateProductDecisionGate({
       thread,
       reviewerLogin,
       afterIndex: evidenceEvent.index,
-      // Editing a deferral does not revoke an existing acceptance, but an
-      // edited/new fix claim needs reviewer evidence after that claim became
-      // effective rather than reusing an older resolution.
-      notBefore: Math.max(
-        highFindingAt,
-        evidenceEvent.kind === 'fixed' ? evidenceEvent.at : 0,
-      ),
+      highFindingAt,
+      evidenceKind: evidenceEvent.kind,
+      evidenceAt: evidenceEvent.at,
       reviews,
       headOid,
     })

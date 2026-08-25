@@ -41,7 +41,7 @@ const NEGATED_REVIEWER_WITHDRAWAL_PATTERN =
   /\b(?:(?:have|has|had)\s+not|haven['’]t|hasn['’]t|hadn['’]t)\s+(?:withdrawn|retracted)\b[^.。！？!?\n]{0,40}\b(?:blocker|objection|concern|request\s+for\s+changes)\b|\b(?:(?:do|does|did)\s+not|don['’]t|doesn['’]t|didn['’]t)\s+(?:withdraw|retract)\b[^.。！？!?\n]{0,40}\b(?:blocker|objection|concern|request\s+for\s+changes)\b|\b(?:blocker|objection|concern|request\s+for\s+changes)\b[^.。！？!?\n]{0,40}\b(?:(?:has|had)\s+not|hasn['’]t|hadn['’]t)\s+been\s+(?:withdrawn|retracted)\b/i
 
 const REVIEWER_ACCEPTANCE_UNCERTAINTY_PATTERN =
-  /[?？]|\b(?:can|could|would|should|may|might|will|do|does|did)\s+(?!(?:not|never)\b)(?:i|we|you|they|he|she|maintainers?|reviewers?|the\s+team|(?:the\s+)?@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,2})\s+(?:accept|agree|consider|regard|treat)\b|\b(?:are|is)\s+(?:i|we|you|they|he|she|maintainers?|reviewers?|the\s+team|(?:the\s+)?@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,2})\s+(?:(?:accept|agree|consider|regard|treat)ing|(?:willing|able|ready|prepared)\s+to\s+(?:accept|agree|consider|regard|treat))\b|\bwhether\s+(?:i|we|you|they|he|she|maintainers?|reviewers?|the\s+team|(?:the\s+)?@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,2})\s+(?:accept|agree|consider|regard|treat)s?\b|\b(?:i|we)\s+(?:could|would|may|might)\s+(?:accept|agree|consider|regard|treat)\b|\b(?:maybe|perhaps|possibly)\b[^.。！？!?\n]{0,40}\b(?:accept|agree|consider|regard|treat)\b/i
+  /[?？]|(?:是否(?:可以)?|是不是|能否|可否|能不能|可不可以|要不要)[^。！？!?\n]{0,32}(?:接受|同意|另开|单独处理|不阻塞|非阻塞)|(?:吗|么|呢|吧)(?:$|[\s。！？!?，,；;])|\b(?:can|could|would|should|may|might|will|do|does|did)\s+(?!(?:not|never)\b)(?:i|we|you|they|he|she|maintainers?|reviewers?|the\s+team|(?:the\s+)?@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,2})\s+(?:accept|agree|consider|regard|treat)\b|\b(?:are|is)\s+(?:i|we|you|they|he|she|maintainers?|reviewers?|the\s+team|(?:the\s+)?@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,2})\s+(?:(?:accept|agree|consider|regard|treat)ing|(?:willing|able|ready|prepared)\s+to\s+(?:accept|agree|consider|regard|treat))\b|\bwhether\s+(?:i|we|you|they|he|she|maintainers?|reviewers?|the\s+team|(?:the\s+)?@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,2})\s+(?:accept|agree|consider|regard|treat)s?\b|\b(?:i|we)\s+(?:could|would|may|might)\s+(?:accept|agree|consider|regard|treat)\b|\b(?:maybe|perhaps|possibly)\b[^.。！？!?\n]{0,40}\b(?:accept|agree|consider|regard|treat)\b/i
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
@@ -81,24 +81,32 @@ function compactEditText(value) {
 
 function editDistanceWithin(left, right, limit) {
   if (Math.abs(left.length - right.length) > limit) return false
-  let previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+  const overflow = limit + 1
+  let previous = new Map()
+  for (let index = 0; index <= Math.min(right.length, limit); index++) {
+    previous.set(index, index)
+  }
   for (let leftIndex = 1; leftIndex <= left.length; leftIndex++) {
-    const current = [leftIndex]
-    let rowMinimum = current[0]
-    for (let rightIndex = 1; rightIndex <= right.length; rightIndex++) {
-      const substitution = previous[rightIndex - 1]
+    const current = new Map()
+    const start = Math.max(0, leftIndex - limit)
+    const end = Math.min(right.length, leftIndex + limit)
+    let rowMinimum = overflow
+    for (let rightIndex = start; rightIndex <= end; rightIndex++) {
+      const value = rightIndex === 0
+        ? leftIndex
+        : Math.min(
+          (previous.get(rightIndex) ?? overflow) + 1,
+          (current.get(rightIndex - 1) ?? overflow) + 1,
+          (previous.get(rightIndex - 1) ?? overflow)
         + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1)
-      current[rightIndex] = Math.min(
-        previous[rightIndex] + 1,
-        current[rightIndex - 1] + 1,
-        substitution,
-      )
-      rowMinimum = Math.min(rowMinimum, current[rightIndex])
+        )
+      if (value <= limit) current.set(rightIndex, value)
+      rowMinimum = Math.min(rowMinimum, value)
     }
     if (rowMinimum > limit) return false
     previous = current
   }
-  return previous[right.length] <= limit
+  return (previous.get(right.length) ?? overflow) <= limit
 }
 
 function isCosmeticEdit(left, right) {
@@ -109,23 +117,57 @@ function isCosmeticEdit(left, right) {
   return editDistanceWithin(compactLeft, compactRight, limit)
 }
 
-function editTexts(comment) {
-  return (comment?.edits || [])
-    .map((edit) => String(edit?.body ?? edit?.diff ?? ''))
-    .filter(Boolean)
+function patchEdit(value) {
+  const lines = String(value || '').split('\n')
+  const before = []
+  const after = []
+  let hasHunk = false
+  for (const line of lines) {
+    if (/^@@(?:\s|$)/.test(line)) hasHunk = true
+    else if (/^-(?!---)/.test(line)) before.push(line.slice(1))
+    else if (/^\+(?!\+\+)/.test(line)) after.push(line.slice(1))
+  }
+  if (!hasHunk && (before.length === 0 || after.length === 0)) return null
+  return {
+    type: 'patch',
+    before: before.join('\n'),
+    after: after.join('\n'),
+    complete: before.length > 0 && after.length > 0,
+  }
+}
+
+function editEntries(comment) {
+  return (comment?.edits || []).map((edit) => {
+    const body = edit?.body == null ? '' : String(edit.body)
+    if (body) return { type: 'body', body }
+    const diff = edit?.diff == null ? '' : String(edit.diff)
+    if (!diff) return { type: 'empty' }
+    return patchEdit(diff) || { type: 'body', body: diff }
+  })
+}
+
+function editDispositionTexts(comment) {
+  return editEntries(comment).flatMap((entry) => {
+    if (entry.type === 'body') return [entry.body]
+    if (entry.type === 'patch') return [entry.before, entry.after].filter(Boolean)
+    return []
+  })
 }
 
 function hasOpaqueDispositionEdit(comment) {
   if (commentTime(comment) <= dispositionTime(comment)) return false
   if (comment?.edits_complete === false) return true
-  const edits = comment?.edits || []
-  if (edits.length === 0) return true
-  return edits.every((edit) => {
-    const value = String(edit?.body ?? edit?.diff ?? '')
-    if (!value) return true
-    if (authorDispositionKind(value)) return false
-    if (/(?:^|\n)(?:@@|[+-])/.test(value)) return true
-    return isLikelyPatchFragment(value, comment.body, authorDispositionKind)
+  const entries = editEntries(comment)
+  if (entries.length === 0) return true
+  const currentKind = authorDispositionKind(comment.body)
+  return entries.every((entry) => {
+    if (entry.type === 'empty') return true
+    if (entry.type === 'patch') {
+      if (authorDispositionKind(entry.before) || authorDispositionKind(entry.after)) return false
+      return !entry.complete && !currentKind
+    }
+    if (authorDispositionKind(entry.body)) return false
+    return isLikelyPatchFragment(entry.body, comment.body, authorDispositionKind)
   })
 }
 
@@ -143,10 +185,21 @@ function hasSemanticDispositionEdit(comment, dispositionKind) {
   if (comment?.edits_complete === false) return true
   const currentBody = String(comment?.body || '')
   const currentKind = dispositionKind(currentBody)
-  const versions = editTexts(comment)
-  if (versions.length === 0) return true
-  return versions.some((body) => {
-    if (isLikelyPatchFragment(body, currentBody, dispositionKind)) return false
+  const entries = editEntries(comment)
+  if (entries.length === 0) return true
+  return entries.some((entry) => {
+    if (entry.type === 'empty') return true
+    if (entry.type === 'patch') {
+      const beforeKind = dispositionKind(entry.before)
+      const afterKind = dispositionKind(entry.after)
+      if (beforeKind !== afterKind && (beforeKind || afterKind)) return true
+      if (beforeKind && afterKind) return !isCosmeticEdit(entry.before, entry.after)
+      return !entry.complete
+    }
+    const body = entry.body
+    if (isLikelyPatchFragment(body, currentBody, dispositionKind)) {
+      return compactEditText(body).length > 0
+    }
     if (dispositionKind(body) !== currentKind) return true
     if (isCosmeticEdit(body, currentBody)) return false
     return compactEditText(body) !== compactEditText(currentBody)
@@ -195,9 +248,18 @@ function reviewerDispositionTime(comment) {
     return dispositionTime(comment)
   }
   if (reviewerDispositionKind(comment.body) === 'reject') return commentTime(comment)
-  return comment?.edits_complete !== false && editTexts(comment).length > 0
-    ? commentTime(comment)
-    : dispositionTime(comment)
+  const currentAcceptance = reviewerAcceptanceKind(comment.body)
+  const provesFreshAcceptance = comment?.edits_complete !== false
+    && editEntries(comment).some((entry) => {
+      if (entry.type === 'empty') return false
+      if (entry.type === 'patch') {
+        return entry.complete
+          && reviewerAcceptanceKind(entry.after) === currentAcceptance
+          && reviewerAcceptanceKind(entry.before) !== currentAcceptance
+      }
+      return reviewerAcceptanceKind(entry.body) !== currentAcceptance
+    })
+  return provesFreshAcceptance ? commentTime(comment) : dispositionTime(comment)
 }
 
 function severityDispositionKind(body) {
@@ -213,16 +275,25 @@ function severityDispositionTime(comment) {
   if (!updatedAt || updatedAt <= createdAt) return createdAt
 
   const currentSeverity = severityDispositionKind(comment.body)
-  const severityChanged = editTexts(comment).some((body) => {
-    if (isLikelyPatchFragment(body, comment.body, severityDispositionKind)) return false
-    const historicalSeverity = severityDispositionKind(body)
-    return historicalSeverity !== currentSeverity
+  const entries = editEntries(comment)
+  const severityChanged = entries.some((entry) => {
+    if (entry.type === 'empty') return false
+    if (entry.type === 'patch') {
+      const beforeSeverity = severityDispositionKind(entry.before)
+      const afterSeverity = severityDispositionKind(entry.after)
+      return beforeSeverity !== afterSeverity && Boolean(beforeSeverity || afterSeverity)
+    }
+    if (isLikelyPatchFragment(entry.body, comment.body, severityDispositionKind)) return false
+    return severityDispositionKind(entry.body) !== currentSeverity
   })
   if (severityChanged) return updatedAt
 
   // If GitHub did not return a complete edit history, only move a high-risk
   // severity forward. Moving a low-risk P2/P3 forward could hide a later P0/P1.
-  if (comment?.edits_complete === false || editTexts(comment).length === 0) {
+  const hasOpaqueSeverityEdit = entries.length === 0
+    || entries.every((entry) => entry.type === 'empty'
+      || (entry.type === 'patch' && !entry.complete))
+  if (comment?.edits_complete === false || hasOpaqueSeverityEdit) {
     return isHighSeverity(currentSeverity) ? updatedAt : createdAt
   }
   return createdAt
@@ -230,7 +301,7 @@ function severityDispositionTime(comment) {
 
 function authorDispositionEvents(comment, index) {
   const currentKind = authorDispositionKind(comment.body)
-  const historicalDeferral = editTexts(comment).some((body) => isProductDeferral(body))
+  const historicalDeferral = editDispositionTexts(comment).some((body) => isProductDeferral(body))
     || hasOpaqueDispositionEdit(comment)
   const semanticEdit = hasSemanticDispositionEdit(comment, authorDispositionKind)
   const at = semanticEdit ? commentTime(comment) : dispositionTime(comment)

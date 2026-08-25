@@ -1310,6 +1310,179 @@ test('deferral 的错字或格式编辑不会清除已有 acceptance', () => {
   }).satisfied, true)
 })
 
+test('长篇 deferral 的有界编辑距离保留阈值内 acceptance 并拒绝阈值外复用', () => {
+  const prefix = 'Out of scope; defer to a follow-up PR. '
+  const original = `${prefix}${'a'.repeat(10_000)}`
+  const candidate = thread({
+    authorReply: original,
+    reviewerReply: 'Accepted as a separate concern; non-blocking.',
+  })
+  candidate.comments[1] = {
+    ...candidate.comments[1],
+    body: `${prefix}${'a'.repeat(9_994)}${'b'.repeat(6)}`,
+    updated_at: '2026-08-25T03:03:00Z',
+    edits: [{ body: original }],
+  }
+
+  const startedAt = performance.now()
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+  assert.ok(performance.now() - startedAt < 1_000, '长文本比较应受阈值带宽约束')
+
+  candidate.comments[1].body = `${prefix}${'a'.repeat(9_993)}${'b'.repeat(7)}`
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+})
+
+test('UserContentEdit patch 的格式或错字编辑不会清除已有 acceptance', () => {
+  for (const { body, diff } of [
+    {
+      body: '**Out of scope** — defer to a follow-up PR.',
+      diff: '@@ -1 +1 @@\n-Out of scope; defer to a follow-up PR.\n+**Out of scope** — defer to a follow-up PR.',
+    },
+    {
+      body: 'Out of scope; defer to a followup PR.',
+      diff: '@@ -1 +1 @@\n-Out of scope; defer to a follow-up PR.\n+Out of scope; defer to a followup PR.',
+    },
+    {
+      body: 'Out of scope; defer to a follow-up PR. Clarified details.',
+      diff: '@@ -1 +1 @@\n-Original background.\n+Clarified background.',
+    },
+  ]) {
+    const candidate = thread({
+      authorReply: body,
+      reviewerReply: 'Accepted as a separate concern; non-blocking.',
+    })
+    candidate.comments[1] = {
+      ...candidate.comments[1],
+      updated_at: '2026-08-25T03:03:00Z',
+      edits: [{ edited_at: '2026-08-25T03:03:00Z', diff }],
+      edits_complete: true,
+    }
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, true, diff)
+  }
+})
+
+test('severity 的完整格式 patch 不会把 P1 evidence boundary 推到 acceptance 之后', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'Accepted as a separate concern; non-blocking.',
+  })
+  candidate.comments[0] = {
+    ...candidate.comments[0],
+    body: '**![P1 Badge] P1 behavior regression**',
+    updated_at: '2026-08-25T03:03:00Z',
+    edits: [{
+      diff: '@@ -1 +1 @@\n-![P1 Badge] P1 behavior regression\n+**![P1 Badge] P1 behavior regression**',
+    }],
+    edits_complete: true,
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+
+  candidate.comments[0].edits = [{ diff: '@@ -1 +1 @@\n+**![P1 Badge] P1 behavior regression**' }]
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+})
+
+test('UserContentEdit patch 只有可证明的 disposition 改写才推进 evidence boundary', () => {
+  const candidate = thread({
+    authorReply: 'Fixed and covered by regression tests.',
+    reviewerReply: 'Accepted as a separate concern; non-blocking.',
+  })
+  candidate.comments[1] = {
+    ...candidate.comments[1],
+    updated_at: '2026-08-25T03:03:00Z',
+    edits: [{
+      edited_at: '2026-08-25T03:03:00Z',
+      diff: '@@ -1 +1 @@\n-Out of scope; defer to a follow-up PR.\n+Fixed and covered by regression tests.',
+    }],
+    edits_complete: true,
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'Confirmed fixed and resolved.',
+    created_at: '2026-08-25T03:04:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
+test('reviewer 的单边 patch 不能伪造为 deferral 之后的新 acceptance', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  candidate.comments.splice(1, 0, {
+    login: 'codex',
+    body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:00:30Z',
+    updated_at: '2026-08-25T03:02:00Z',
+    edits: [{ diff: '@@ -1 +1 @@\n+Accepted as a separate concern; non-blocking.' }],
+    edits_complete: true,
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments[1].edits = [{
+    diff: '@@ -1 +1 @@\n-This remains a blocker.\n+Accepted as a separate concern; non-blocking.',
+  }]
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
+test('不完整、空或单边 patch 编辑保持 fail-closed', () => {
+  for (const edit of [
+    { edits_complete: false, edits: [{ diff: '@@ -1 +1 @@\n-Out of scope.\n+Out of scope!' }] },
+    { edits_complete: true, edits: [{ diff: '' }] },
+    { edits_complete: true, edits: [{ diff: '@@ -1 +1 @@\n+Clarified wording.' }] },
+  ]) {
+    const candidate = thread({
+      authorReply: 'Out of scope; defer to a follow-up PR.',
+      reviewerReply: 'Accepted as a separate concern; non-blocking.',
+    })
+    candidate.comments[1] = {
+      ...candidate.comments[1],
+      updated_at: '2026-08-25T03:03:00Z',
+      ...edit,
+    }
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, false, JSON.stringify(edit))
+  }
+})
+
 test('作者编辑删除 deferral 措辞仍保留产品取舍门', () => {
   const candidate = thread({
     authorReply: 'Clarified the reply.',
@@ -1724,6 +1897,14 @@ test('疑问式或不确定式 acceptance 不是 reviewer 明确放行', () => {
     'We might accept this as a separate concern.',
     'Maybe accept this as a separate concern.',
     'Perhaps we accept this as a separate concern.',
+    '是否接受这个延期并单独处理',
+    '我们能否接受这个延期并单独处理',
+    '可否同意这个延期并单独处理',
+    '我们能不能接受这个延期并单独处理',
+    '是否可以单独处理',
+    '我们是不是接受这个延期并单独处理',
+    '要不要接受这个延期并单独处理',
+    '我们可以接受这个延期吗',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,
@@ -1733,6 +1914,23 @@ test('疑问式或不确定式 acceptance 不是 reviewer 明确放行', () => {
         reviewerReply,
       })],
     }).satisfied, false, reviewerReply)
+  }
+})
+
+test('中文明确接受产品取舍仍可放行', () => {
+  for (const reviewerReply of [
+    '接受这个延期并单独处理。',
+    '同意这个产品取舍，后续单独处理。',
+    '这个问题不再阻塞，可以另开处理。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: '这是产品取舍，后续另开处理。',
+        reviewerReply,
+      })],
+    }).satisfied, true, reviewerReply)
   }
 })
 

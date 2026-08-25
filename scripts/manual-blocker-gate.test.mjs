@@ -1331,3 +1331,107 @@ test('同时约束当前 PR 与其它 PR 的条件必须保留人工阻止', () 
   })
   assert.equal(result.satisfied, false)
 })
+
+test('明确阻止 PR 或 pull request 与阻止 merge 等价', () => {
+  for (const source of ['comments', 'reviews']) {
+    for (const body of [
+      "I'm blocking this PR.",
+      'Block this PR until migration passes.',
+      'We are blocking the pull request.',
+      'I veto this pull request.',
+    ]) {
+      const event = source === 'comments'
+        ? {
+            login: 'reviewer', permission: 'write', body,
+            created_at: '2026-08-25T04:00:00Z',
+          }
+        : {
+            login: 'reviewer', permission: 'write', state: 'COMMENTED', body,
+            commit_id: headOid, submitted_at: '2026-08-25T04:00:00Z',
+          }
+      const result = evaluateManualBlockers({ headOid, [source]: [event] })
+      assert.equal(result.satisfied, false, `${source}: ${body}`)
+      assert.deepEqual(result.blockers, ['reviewer'], `${source}: ${body}`)
+    }
+  }
+})
+
+test('否定或撤回 LGTM 不能清除原阻止者的 veto', () => {
+  for (const source of ['comments', 'reviews']) {
+    for (const body of [
+      `I don't consider this LGTM ${headOid.slice(0, 7)}.`,
+      `I cannot give this an LGTM ${headOid.slice(0, 7)}.`,
+      `I haven't given LGTM ${headOid.slice(0, 7)}.`,
+      `I retract my LGTM ${headOid.slice(0, 7)}.`,
+    ]) {
+      const prior = source === 'comments'
+        ? {
+            login: 'reviewer', permission: 'write', body: 'Do not merge.',
+            created_at: '2026-08-25T04:00:00Z',
+          }
+        : {
+            login: 'reviewer', permission: 'write', state: 'CHANGES_REQUESTED',
+            commit_id: headOid, submitted_at: '2026-08-25T04:00:00Z',
+          }
+      const event = source === 'comments'
+        ? {
+            login: 'reviewer', permission: 'write', body,
+            created_at: '2026-08-25T04:01:00Z',
+          }
+        : {
+            login: 'reviewer', permission: 'write', state: 'COMMENTED', body,
+            commit_id: headOid, submitted_at: '2026-08-25T04:01:00Z',
+          }
+      const result = evaluateManualBlockers({ headOid, [source]: [prior, event] })
+      assert.equal(result.satisfied, false, `${source}: ${body}`)
+      assert.deepEqual(result.blockers, ['reviewer'], `${source}: ${body}`)
+    }
+  }
+})
+
+test('no longer blocker 是解除说明，不会被持久化为新 veto', () => {
+  for (const body of [
+    'This is no longer a release blocker.',
+    'This is no longer a functionality blocker.',
+    'The release blocker is no longer active.',
+    'The functionality blocker is no longer blocking.',
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-25T04:00:00Z',
+      }],
+    }).satisfied, true, body)
+  }
+})
+
+test('no longer blocker 的局部清理不能吞掉同句后续真实 veto', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    comments: [{
+      login: 'reviewer', permission: 'write',
+      body: "This is no longer a release blocker, but I'm blocking this PR.",
+      created_at: '2026-08-25T04:00:00Z',
+    }],
+  })
+  assert.equal(result.satisfied, false)
+  assert.deepEqual(result.blockers, ['reviewer'])
+})
+
+test('明确不阻止 PR 或 pull request 不会被主动 veto 规则反向命中', () => {
+  for (const body of [
+    "I'm not blocking this PR.",
+    "We're no longer blocking the pull request.",
+    'Do not block this PR.',
+    'I do not veto this pull request.',
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-25T04:00:00Z',
+      }],
+    }).satisfied, true, body)
+  }
+})

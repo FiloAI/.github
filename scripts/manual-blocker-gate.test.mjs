@@ -277,6 +277,7 @@ test('当前 head 的 contracted approval negation 保持 fail-closed', () => {
     `I haven’t approved ${headOid.slice(0, 8)} yet. LGTM ${headOid.slice(0, 8)}.`,
     `We won't approve ${headOid.slice(0, 8)}.`,
     `我尚未确认可以合并 ${headOid.slice(0, 8)}。`,
+    `我们尚未批准合并 ${headOid.slice(0, 8)}。`,
     `我不能批准合并 ${headOid.slice(0, 8)}。`,
   ]) {
     const result = evaluateManualBlockers({
@@ -345,6 +346,93 @@ test('同消息的 current-head 放行与非阻止说明不会被误判为 veto'
         },
       ],
     }).satisfied, true, body)
+  }
+})
+
+test('逗号分隔的中文非阻止说明不会被跨标点误判为 veto', () => {
+  for (const body of [
+    '不要阻止，这个合并是安全的。',
+    '不应阻塞，该 merge 可以继续。',
+  ]) {
+    const commentResult = evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    })
+    assert.equal(commentResult.satisfied, true, body)
+
+    const reviewResult = evaluateManualBlockers({
+      headOid,
+      reviews: [{
+        login: 'reviewer', permission: 'write', state: 'COMMENTED', body,
+        commit_id: headOid, submitted_at: '2026-08-24T00:00:00Z',
+      }],
+    })
+    assert.equal(reviewResult.satisfied, true, body)
+  }
+})
+
+test('疑问式 blocker mention 不会持久化为明确 veto', () => {
+  for (const body of [
+    'Is this a release blocker?',
+    'Could this be a functionality blocker?',
+    '这是发布阻断吗？',
+    '这算功能阻塞吗？',
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    }).satisfied, true, body)
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      reviews: [{
+        login: 'reviewer', permission: 'write', state: 'COMMENTED', body,
+        commit_id: headOid, submitted_at: '2026-08-24T00:00:00Z',
+      }],
+    }).satisfied, true, body)
+  }
+})
+
+test('第三方未批准不覆盖评论者本人对当前 head 的明确批准', () => {
+  for (const body of [
+    `Alice hasn't approved ${headOid.slice(0, 7)}, but I approve ${headOid.slice(0, 7)}.`,
+    `Alice 尚未批准 ${headOid.slice(0, 7)}，但我确认可以合并 ${headOid.slice(0, 7)}。`,
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    }).satisfied, true, body)
+  }
+})
+
+test('第一人称修饰语和无主体状态不会被当成第三方未批准而移除', () => {
+  for (const body of [
+    `我个人尚未批准合并 ${headOid.slice(0, 7)}，但 LGTM ${headOid.slice(0, 7)}。`,
+    `我们团队尚未批准合并 ${headOid.slice(0, 7)}，但 LGTM ${headOid.slice(0, 7)}。`,
+    `当前尚未批准合并 ${headOid.slice(0, 7)}，但 LGTM ${headOid.slice(0, 7)}。`,
+    `My team hasn't approved ${headOid.slice(0, 7)}, but LGTM ${headOid.slice(0, 7)}.`,
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    }).satisfied, false, body)
   }
 })
 

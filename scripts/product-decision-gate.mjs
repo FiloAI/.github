@@ -4,6 +4,9 @@ import { isMergeOwner } from './merge-owner-logins.mjs'
 const SEVERITY_PATTERN =
   /(?:alt=["']?P([012])["']?|badge\/P([012])-|\bP([012])\b)/i
 
+const SEVERITY_CHANGE_PATTERN =
+  /\b(?:downgrad(?:e|ed|ing)|upgrad(?:e|ed|ing)|escalat(?:e|ed|ing)|reclassif(?:y|ied|ying)|severity|priority|should\s+be)\b|(?:降级|升级|提高|降低|调整|改为|定为)/i
+
 const PRODUCT_DEFERRAL_PATTERN =
   /(?:产品(?:决定|决策|取舍)|不在本\s*PR\s*(?:修|改|处理)|超出(?:本\s*PR\s*)?范围|不改|不修|暂不处理|后续(?:处理|再处理|修复|解决|\s*PR|\s*issue)|另开(?:\s*PR|\s*issue)?|(?:会|将|将在)[^。！？!?\n]{0,30}(?:修复|处理|解决)|(?:下个|下一(?:个)?|以后|稍后)[^。！？!?\n]{0,24}(?:修复|处理|解决))|\b(?:product\s+(?:decision|trade-?off)|out\s+of\s+scope|not\s+in\s+this\s+PR|won't\s+fix|will\s+not\s+fix|defer(?:red|ring)?|follow-?up\s+(?:PR|issue)|separate\s+(?:PR|issue)|(?:will|plan(?:ned)?\s+to|going\s+to)[^.\n]{0,40}(?:fix|address|resolve)[^.\n]{0,40}(?:later|follow-?up|next\s+(?:PR|pull\s+request))|(?:fix|address|resolve)[^.\n]{0,20}(?:this|it)[^.\n]{0,20}later)\b/i
 
@@ -11,10 +14,10 @@ const NEGATED_PRODUCT_DEFERRAL_PATTERN =
   /(?:不是|并非|并不是)\s*(?:产品(?:决定|决策|取舍)|不改|不修|暂不处理|超出(?:本\s*PR\s*)?范围)|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?(?:product\s+(?:decision|trade-?off)|out\s+of\s+scope|defer(?:red)?)\b/gi
 
 const REVIEWER_ACCEPTANCE_PATTERN =
-  /(?:接受|同意|不再阻塞|不阻塞|非阻塞|撤回(?:阻止|阻塞|反对|异议)|可以另开|单独处理)|\b(?:accept(?:ed)?|agree(?:d)?|makes?\s+sense|not\s+a\s+blocker|non-?blocking|withdraw(?:n)?\s+(?:the\s+)?(?:blocker|objection|concern|request\s+for\s+changes)|separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
+  /(?:接受|同意)[^。！？!?\n]{0,32}(?:延期|取舍|范围(?:说明)?|另开|后续处理|单独处理)|(?:确认|核实)[^。！？!?\n]{0,24}(?:已|已经)(?:修复|处理|解决)|不再阻塞|不阻塞|非阻塞|撤回(?:阻止|阻塞|反对|异议)|可以另开|单独处理|\b(?:accept(?:ed)?|agree(?:d)?)\b[^.。！？!?\n]{0,40}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr))\b|\b(?:confirm(?:ed)?|verif(?:y|ied))\b[^.。！？!?\n]{0,32}\b(?:fixed|addressed|resolved)\b|\bmakes?\s+sense\b[^.。！？!?\n]{0,40}\b(?:scope|separate|follow-?up)\b|\b(?:not\s+a\s+blocker|non-?blocking|withdraw(?:n)?\s+(?:the\s+)?(?:blocker|objection|concern|request\s+for\s+changes)|separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
 
 const REVIEWER_REJECTION_PATTERN =
-  /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|合并前仍需|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
+  /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|合并前仍需|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
@@ -63,6 +66,14 @@ function severityOf(body) {
   return level ? `P${level}` : null
 }
 
+function severityDispositionOf(body, initial = false) {
+  const value = String(body || '')
+  const severity = severityOf(value)
+  if (!severity) return null
+  if (initial || SEVERITY_CHANGE_PATTERN.test(value)) return severity
+  return null
+}
+
 function isHighSeverity(severity) {
   return severity === 'P0' || severity === 'P1'
 }
@@ -90,48 +101,49 @@ export function normalizeProductDecisionThread(thread) {
   }
 }
 
-function isReviewerAcceptance({ thread, reviewerLogin, deferralIndex, notBefore, reviews, headOid }) {
-  const deferral = thread.comments[deferralIndex]
-  // Editing the author's existing deferral must not invalidate an acceptance
-  // that was explicitly given after the original disposition was created.
-  const deferralAt = Math.max(
-    dispositionTime(deferral) || Number.MAX_SAFE_INTEGER,
+function latestReviewerDisposition({ thread, reviewerLogin, afterIndex, notBefore, reviews, headOid }) {
+  const dispositionAt = Math.max(
+    dispositionTime(thread.comments[afterIndex]) || Number.MAX_SAFE_INTEGER,
     notBefore || 0,
   )
   const dispositions = []
 
-  for (const comment of thread.comments.slice(deferralIndex + 1)) {
+  for (const [offset, comment] of thread.comments.slice(afterIndex + 1).entries()) {
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
     const at = dispositionTime(comment)
-    if (at < deferralAt) continue
+    if (at < dispositionAt) continue
     if (isExplicitReviewerRejection(comment.body)) {
-      dispositions.push({ disposition: 'reject', at })
+      dispositions.push({ disposition: 'reject', at, source: 'thread', index: afterIndex + 1 + offset })
     } else if (isExplicitReviewerAcceptance(comment.body)) {
-      dispositions.push({ disposition: 'accept', at })
+      dispositions.push({ disposition: 'accept', at, source: 'thread', index: afterIndex + 1 + offset })
     }
   }
 
-  for (const review of reviews) {
+  for (const [index, review] of reviews.entries()) {
     if (String(review.login || '').toLowerCase() !== reviewerLogin
       || !sameHead(review.commit_id, headOid)) continue
     const at = eventTime(review.submitted_at)
-    if (at < deferralAt) continue
+    if (at < dispositionAt) continue
     const state = String(review.state || '').toUpperCase()
     if (state === 'CHANGES_REQUESTED') {
-      dispositions.push({ disposition: 'reject', at })
+      dispositions.push({ disposition: 'reject', at, source: 'review', index })
     } else if (state === 'APPROVED') {
-      dispositions.push({ disposition: 'accept', at })
+      dispositions.push({ disposition: 'accept', at, source: 'review', index })
     }
   }
 
-  // GitHub does not expose a reliable cross-source sequence number for review
-  // submissions and thread comments. At an identical timestamp, retain the
-  // blocking disposition so an APPROVED review cannot hide a later rejection.
-  dispositions.sort((left, right) => (
-    left.at - right.at
-      || Number(left.disposition === 'reject') - Number(right.disposition === 'reject')
-  ))
-  return dispositions.at(-1)?.disposition === 'accept'
+  if (dispositions.length === 0) return null
+  const latestAt = Math.max(...dispositions.map((item) => item.at))
+  const sourceLatest = new Map()
+  for (const disposition of dispositions.filter((item) => item.at === latestAt)) {
+    const previous = sourceLatest.get(disposition.source)
+    if (!previous || disposition.index > previous.index) {
+      sourceLatest.set(disposition.source, disposition)
+    }
+  }
+  const latest = [...sourceLatest.values()]
+  if (latest.some((item) => item.disposition === 'reject')) return 'reject'
+  return latest.some((item) => item.disposition === 'accept') ? 'accept' : null
 }
 
 function ownerDecisionEvidence({ authorLogin, headOid, after, reviews, comments }) {
@@ -166,21 +178,29 @@ export function evaluateProductDecisionGate({
   const blockers = []
 
   for (const thread of threads) {
-    if (!thread.is_resolved || thread.is_outdated) continue
-    const findingEvents = thread.comments
-      .map((comment, index) => ({ comment, index, severity: severityOf(comment.body) }))
-      .filter(({ comment, severity }) => (
-        String(comment.login || '').toLowerCase() !== author && severity
-      ))
-    const highFinding = findingEvents.find(({ severity }) => isHighSeverity(severity))
-    if (!highFinding) continue
+    if (!thread.is_resolved) continue
+    const reviewerComments = thread.comments
+      .map((comment, index) => ({ comment, index }))
+      .filter(({ comment }) => String(comment.login || '').toLowerCase() !== author)
+    const firstFinding = reviewerComments.find(({ comment }) => severityOf(comment.body))
+    if (!firstFinding) continue
+    const findingEvents = reviewerComments
+      .filter(({ index }) => index >= firstFinding.index)
+      .map(({ comment, index }) => ({
+        comment,
+        index,
+        severity: severityDispositionOf(comment.body, index === firstFinding.index),
+      }))
+      .filter(({ severity }) => severity)
+    const latestFinding = findingEvents.at(-1)
+    if (!latestFinding || !isHighSeverity(latestFinding.severity)) continue
 
-    // A finding may be raised as P2, receive an author deferral, and then be
-    // escalated to P1. Preserve dispositions from the complete finding thread.
+    // Severity follows the latest explicit marker. Preserve author disposition
+    // history across both P2 -> P1 escalation and P1 -> P2 downgrade.
     const findingStartIndex = findingEvents[0].index
-    const finding = highFinding.comment
-    const severity = highFinding.severity
-    const highFindingAt = commentTime(finding)
+    const finding = findingEvents[0].comment
+    const severity = latestFinding.severity
+    const highFindingAt = commentTime(latestFinding.comment)
     const reviewerLogin = String(finding.login || '').toLowerCase()
     const authorEvents = thread.comments
       .map((comment, index) => ({ comment, index }))
@@ -199,21 +219,25 @@ export function evaluateProductDecisionGate({
     const latestDeferral = authorEvents.filter((event) => event.kind === 'deferral').at(-1)
     if (!latestDeferral) continue
     const latestEvent = authorEvents.at(-1)
-    if (latestEvent?.kind === 'fixed'
-      && latestEvent.at >= latestDeferral.at
-      && String(thread.resolved_by || '').toLowerCase() === reviewerLogin) {
-      continue
-    }
-
     const deferralIndex = latestDeferral.index
-    if (isReviewerAcceptance({
+    const evidenceEvent = latestEvent?.kind === 'fixed' && latestEvent.at >= latestDeferral.at
+      ? latestEvent
+      : latestDeferral
+    const reviewerDisposition = latestReviewerDisposition({
       thread,
       reviewerLogin,
-      deferralIndex,
-      notBefore: highFindingAt,
+      afterIndex: evidenceEvent.index,
+      // Editing a deferral does not revoke an existing acceptance, but an
+      // edited/new fix claim needs reviewer evidence after that claim became
+      // effective rather than reusing an older resolution.
+      notBefore: Math.max(
+        highFindingAt,
+        evidenceEvent.kind === 'fixed' ? evidenceEvent.at : 0,
+      ),
       reviews,
       headOid,
-    })) continue
+    })
+    if (reviewerDisposition === 'accept') continue
     blockers.push({
       severity,
       reviewer: finding.login || 'unknown',

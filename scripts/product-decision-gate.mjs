@@ -114,9 +114,10 @@ function hasSemanticDispositionEdit(comment, dispositionKind) {
   const versions = editTexts(comment)
   if (versions.length === 0) return true
   return versions.some((body) => {
-    if (isCosmeticEdit(body, currentBody)) return false
     if (isLikelyPatchFragment(body, currentBody, dispositionKind)) return false
-    return dispositionKind(body) !== currentKind || compactEditText(body) !== compactEditText(currentBody)
+    if (dispositionKind(body) !== currentKind) return true
+    if (isCosmeticEdit(body, currentBody)) return false
+    return compactEditText(body) !== compactEditText(currentBody)
   })
 }
 
@@ -148,6 +149,19 @@ function reviewerDispositionTime(comment) {
   }
   if (reviewerDispositionKind(comment.body) === 'reject') return commentTime(comment)
   return comment?.edits_complete !== false && editTexts(comment).length > 0
+    ? commentTime(comment)
+    : dispositionTime(comment)
+}
+
+function severityDispositionKind(body) {
+  const value = String(body || '')
+  return SEVERITY_CHANGE_PATTERN.test(value)
+    ? destinationSeverityOf(value)
+    : severityOf(value)
+}
+
+function severityDispositionTime(comment) {
+  return hasSemanticDispositionEdit(comment, severityDispositionKind)
     ? commentTime(comment)
     : dispositionTime(comment)
 }
@@ -252,6 +266,11 @@ function latestDisposition(dispositions) {
   const candidates = dispositions.filter((item) => item.at === latestAt)
   if (candidates.length === 1) return candidates[0].disposition
 
+  // A semantic edit and another event sharing GitHub's second-level timestamp
+  // have no provable cross-event order. Preserve an explicit rejection.
+  if (candidates.some((item) => item.semanticEdit)
+    && candidates.some((item) => item.disposition === 'reject')) return 'reject'
+
   const reviewOrders = candidates.map((item) => item.reviewOrder)
   if (reviewOrders.every(Number.isSafeInteger) && reviewOrders.every((order) => order >= 0)) {
     const latestReviewOrder = Math.max(...reviewOrders)
@@ -285,8 +304,9 @@ function latestReviewerDisposition({
   const dispositions = []
   const reviewOrderById = new Map(reviews.map((review, index) => [String(review.id || ''), index]))
 
-  for (const [offset, comment] of thread.comments.slice(afterIndex + 1).entries()) {
+  for (const [index, comment] of thread.comments.entries()) {
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
+    const semanticEdit = hasSemanticDispositionEdit(comment, reviewerDispositionKind)
     const at = reviewerDispositionTime(comment)
     if (isExplicitReviewerRejection(comment.body)) {
       if (at >= originalBoundary) {
@@ -294,7 +314,8 @@ function latestReviewerDisposition({
           disposition: 'reject', at,
           source: 'thread',
           reviewOrder: reviewOrderById.get(String(comment.review_id || '')),
-          index: afterIndex + 1 + offset,
+          index,
+          semanticEdit,
         })
       }
     } else {
@@ -304,7 +325,8 @@ function latestReviewerDisposition({
           disposition: 'accept', at,
           source: 'thread',
           reviewOrder: reviewOrderById.get(String(comment.review_id || '')),
-          index: afterIndex + 1 + offset,
+          index,
+          semanticEdit,
         })
       }
     }
@@ -383,16 +405,23 @@ export function evaluateProductDecisionGate({
         comment,
         index,
         severity: severityDispositionOf(comment.body, index === firstFinding.index),
+        at: severityDispositionTime(comment),
       }))
       .filter(({ severity }) => severity)
-    const latestFinding = findingEvents.at(-1)
+    const latestFindingAt = Math.max(...findingEvents.map((event) => event.at))
+    const latestFindingCandidates = findingEvents.filter((event) => event.at === latestFindingAt)
+    const latestFinding = latestFindingCandidates.sort((left, right) => {
+      const severityRank = { P0: 0, P1: 1, P2: 2 }
+      return severityRank[left.severity] - severityRank[right.severity]
+        || right.index - left.index
+    })[0]
     if (!latestFinding || !isHighSeverity(latestFinding.severity)) continue
 
     // Severity follows the latest explicit marker. Preserve author disposition
     // history across both P2 -> P1 escalation and P1 -> P2 downgrade.
-    const findingStartIndex = findingEvents[0].index
+    const findingStartIndex = firstFinding.index
     const severity = latestFinding.severity
-    const highFindingAt = commentTime(latestFinding.comment)
+    const highFindingAt = latestFinding.at
     const authorEvents = thread.comments
       .map((comment, index) => ({ comment, index }))
       .filter(({ comment, index }) => (

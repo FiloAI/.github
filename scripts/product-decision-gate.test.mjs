@@ -250,6 +250,47 @@ test('reviewer 把旧 acceptance 编辑为更新 rejection 时按有效编辑时
   }).satisfied, false)
 })
 
+test('较早位置的 reviewer comment 后编辑为 rejection 可否定后续 acceptance', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'This remains a blocker.',
+  })
+  candidate.comments[2] = {
+    ...candidate.comments[2],
+    updated_at: '2026-08-25T03:06:00Z',
+    edits: [{
+      edited_at: '2026-08-25T03:06:00Z',
+      diff: 'Accepted as a separate concern; non-blocking.',
+    }],
+  }
+  candidate.comments.push(
+    {
+      login: 'author', body: 'Fixed this finding.',
+      created_at: '2026-08-25T03:03:00Z',
+    },
+    {
+      login: 'codex', body: 'Confirmed fixed and resolved.',
+      created_at: '2026-08-25T03:04:00Z',
+    },
+  )
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:07:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
 test('reviewer 直接要求合并前修复会撤回较早 acceptance', () => {
   for (const rejection of [
     'Actually, please fix this before merging.',
@@ -532,6 +573,82 @@ test('严重度跟随最新明确标记，支持 P1 降级 P2 后再升级 P1', 
     authorLogin: 'author',
     threads: [candidate],
   }).satisfied, false)
+})
+
+test('编辑后的 severity 按有效时间覆盖线程位置', () => {
+  const editedToP1 = thread({
+    severity: 'P1',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  editedToP1.comments[0] = {
+    ...editedToP1.comments[0],
+    updated_at: '2026-08-25T03:04:00Z',
+    edits: [{
+      edited_at: '2026-08-25T03:04:00Z',
+      diff: '![P2 Badge] P2 behavior regression',
+    }],
+  }
+  editedToP1.comments.splice(1, 0, {
+    login: 'codex', body: 'Downgrading this finding from P1 to P2.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  editedToP1.comments[2].created_at = '2026-08-25T03:03:00Z'
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [editedToP1],
+  }).satisfied, false)
+
+  const editedToP2 = thread({
+    severity: 'P2',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  editedToP2.comments[0] = {
+    ...editedToP2.comments[0],
+    updated_at: '2026-08-25T03:04:00Z',
+    edits: [{
+      edited_at: '2026-08-25T03:04:00Z',
+      diff: '![P1 Badge] P1 behavior regression',
+    }],
+  }
+  editedToP2.comments.splice(1, 0, {
+    login: 'codex', body: 'Escalating this finding from P2 to P1.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  editedToP2.comments[2].created_at = '2026-08-25T03:03:00Z'
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [editedToP2],
+  }).satisfied, true)
+})
+
+test('severity 同秒并列时保守保留 P0/P1', () => {
+  const candidate = thread({
+    severity: 'P2',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  candidate.comments[0] = {
+    ...candidate.comments[0],
+    updated_at: '2026-08-25T03:02:00Z',
+    edits: [{
+      edited_at: '2026-08-25T03:02:00Z',
+      diff: '![P1 Badge] P1 behavior regression',
+    }],
+  }
+  candidate.comments.splice(1, 0, {
+    login: 'codex', body: 'Escalating this finding from P2 to P1.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  candidate.comments[2].created_at = '2026-08-25T03:03:00Z'
+
+  const result = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  })
+  assert.equal(result.satisfied, false)
+  assert.equal(result.blockers[0].severity, 'P1')
 })
 
 test('只有原 finding reviewer 可以改变严重级别', () => {

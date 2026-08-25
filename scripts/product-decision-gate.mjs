@@ -11,10 +11,10 @@ const NEGATED_PRODUCT_DEFERRAL_PATTERN =
   /(?:不是|并非|并不是)\s*(?:产品(?:决定|决策|取舍)|不改|不修|暂不处理|超出(?:本\s*PR\s*)?范围)|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?(?:product\s+(?:decision|trade-?off)|out\s+of\s+scope|defer(?:red)?)\b/gi
 
 const REVIEWER_ACCEPTANCE_PATTERN =
-  /(?:接受|同意|不再阻塞|不阻塞|非阻塞|撤回|可以另开|单独处理)|\b(?:accept(?:ed)?|agree(?:d)?|makes?\s+sense|not\s+a\s+blocker|non-?blocking|withdraw(?:n)?|separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
+  /(?:接受|同意|不再阻塞|不阻塞|非阻塞|撤回(?:阻止|阻塞|反对|异议)|可以另开|单独处理)|\b(?:accept(?:ed)?|agree(?:d)?|makes?\s+sense|not\s+a\s+blocker|non-?blocking|withdraw(?:n)?\s+(?:the\s+)?(?:blocker|objection|concern|request\s+for\s+changes)|separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
 
 const REVIEWER_REJECTION_PATTERN =
-  /(?:不接受|不同意|不理解|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|合并前仍需|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
+  /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|合并前仍需|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw)|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i

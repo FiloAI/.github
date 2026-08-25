@@ -99,7 +99,11 @@ test('原 reviewer 明确接受范围解释后不再阻塞', () => {
 test('reviewer 明确否定接受时不能因关键词误放行', () => {
   for (const reviewerReply of [
     '我不同意，这仍然阻塞合并。',
+    '我撤回同意。',
     "I don't accept this; it remains a blocker.",
+    'I have not agreed to this deferral.',
+    'I no longer agree.',
+    'I withdraw my acceptance.',
     'Understood, but this still needs to be fixed before merge.',
   ]) {
     const result = evaluateProductDecisionGate({
@@ -111,6 +115,22 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
       })],
     })
     assert.equal(result.satisfied, false, reviewerReply)
+  }
+})
+
+test('reviewer 只撤回阻止时仍可构成明确接受', () => {
+  for (const reviewerReply of [
+    '我撤回阻止，这个问题可以另开处理。',
+    'I withdraw the blocker; accepted as a separate concern.',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: '超出本 PR 范围，不改。',
+        reviewerReply,
+      })],
+    }).satisfied, true, reviewerReply)
   }
 })
 

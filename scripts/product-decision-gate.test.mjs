@@ -199,6 +199,17 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     "I'm not accepting this as a separate concern.",
     "We're not agreeing to this deferral.",
     'I am not accepting this as a separate issue.',
+    'I am not willing to accept this as a separate concern.',
+    'I am not ready to accept this as a separate concern.',
+    'We are not prepared to agree to this deferral.',
+    'I cannot currently accept this as a separate concern.',
+    'I do not yet accept this as a separate concern.',
+    "I can't now agree to this deferral.",
+    'I am unwilling to accept this as a separate concern.',
+    'I am currently unable to accept this as a separate concern.',
+    'I am not yet accepting this as a separate concern.',
+    'We are still not agreeing to this deferral.',
+    'I am not in a position to accept this as a separate concern.',
   ]) {
     const result = evaluateProductDecisionGate({
       headOid: head,
@@ -216,6 +227,23 @@ test('reviewer 只撤回阻止时仍可构成明确接受', () => {
   for (const reviewerReply of [
     '我撤回阻止，这个问题可以另开处理。',
     'I withdraw the blocker; accepted as a separate concern.',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: '超出本 PR 范围，不改。',
+        reviewerReply,
+      })],
+    }).satisfied, true, reviewerReply)
+  }
+})
+
+test('reviewer 带 willing 或 ready 的肯定接受仍可放行', () => {
+  for (const reviewerReply of [
+    'I am willing to accept this as a separate concern.',
+    'I am ready to accept this as a separate concern.',
+    'We are prepared to agree to this deferral.',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,
@@ -873,6 +901,31 @@ test('严重度变更使用目标值而不是 from 后的旧值', () => {
     authorLogin: 'author',
     threads: [candidate],
   }).satisfied, true)
+})
+
+test('promoting 或 raising 的严重度升级进入 P1 产品取舍门', () => {
+  for (const severityUpdate of [
+    'Promoting this from P2 to P1.',
+    'Raising this finding from P2 to P1.',
+    'Promoted this finding to P1.',
+    'Raised this from P2 to P1.',
+  ]) {
+    const candidate = thread({
+      severity: 'P2',
+      authorReply: 'Out of scope; defer to a follow-up PR.',
+    })
+    candidate.comments.push({
+      login: 'codex', body: severityUpdate,
+      created_at: '2026-08-25T03:02:00Z',
+    })
+    const result = evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    })
+    assert.equal(result.satisfied, false, severityUpdate)
+    assert.equal(result.blockers[0].severity, 'P1', severityUpdate)
+  }
 })
 
 test('should be 严重度变更使用目标级别而不是最后出现的否定级别', () => {
@@ -2439,6 +2492,12 @@ test('not going to fix 或 address 是明确产品取舍延期', () => {
     'WE ARE NOT FIXING THIS.',
     'We are not addressing the issue.',
     'We are not fixing this because it is out of scope.',
+    "We're not changing this.",
+    'We are not changing this in this PR.',
+    'I am not changing the behavior here.',
+    'We are not making the requested change.',
+    "We're not making this change.",
+    'I am not making that change because it is out of scope.',
     'This will not be fixed in this PR.',
     "We won't change this.",
     'I will not change it.',
@@ -2493,6 +2552,9 @@ test('积极进行中的当前修复不是 no-fix disposition', () => {
     'We are not addressing this documentation; fixed the behavior.',
     'We are not fixing the issue template; fixed the implementation.',
     'We are not addressing the finding metadata; fixed the behavior.',
+    "We're not changing this test; fixed the implementation.",
+    'We are not changing this documentation; fixed the behavior.',
+    'We are not making changes to the fixture; fixed the implementation.',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,

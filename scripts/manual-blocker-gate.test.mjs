@@ -103,6 +103,7 @@ test('其他人的批准不能覆盖原阻止者', () => {
 test('原阻止者转述或引用第三方批准不能解除自己的 veto', () => {
   for (const body of [
     `Alice approved ${headOid.slice(0, 7)}.`,
+    `Alice hereby approved ${headOid.slice(0, 7)}.`,
     `The security team has approved ${headOid.slice(0, 7)}.`,
     `Alice said LGTM ${headOid.slice(0, 7)}.`,
     `I heard Alice approved ${headOid.slice(0, 7)}.`,
@@ -125,6 +126,28 @@ test('原阻止者转述或引用第三方批准不能解除自己的 veto', () 
         },
       ],
     }).satisfied, false, body)
+  }
+})
+
+test('带第一人称修饰词的 current-head approval 可以解除自己的 veto', () => {
+  for (const body of [
+    `I hereby approve ${headOid.slice(0, 7)}.`,
+    `I have hereby approved ${headOid.slice(0, 7)}.`,
+    `We explicitly now approve ${headOid.slice(0, 7)}.`,
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [
+        {
+          login: 'reviewer', permission: 'write', body: 'Do not merge.',
+          created_at: '2026-08-24T00:00:00Z',
+        },
+        {
+          login: 'reviewer', permission: 'write', body,
+          created_at: '2026-08-24T00:01:00Z',
+        },
+      ],
+    }).satisfied, true, body)
   }
 })
 
@@ -467,6 +490,7 @@ test('同一段先说无 CI 阻断、随后明确不要合并时仍然阻塞', (
 test('同一分句的局部非阻塞说明不能吞掉真实功能阻断', () => {
   for (const body of [
     'CI 不会阻塞合并，但功能阻断。',
+    '不要阻止合并，但功能阻断合并。',
     'No merge blocker from CI, but this is a release blocker.',
   ]) {
     assert.equal(evaluateManualBlockers({
@@ -564,8 +588,10 @@ test('已解决或历史 blocker 说明不会生成新的持久 veto', () => {
     'The functionality blocker has been resolved.',
     'The merge blocker was cleared yesterday.',
     'We resolved the release blocker.',
+    'The merge blocker was fixed and is not back.',
     '发布阻断已经修复。',
     '功能阻塞现已解除。',
+    '功能阻断已解决，没有再次出现。',
   ]) {
     assert.equal(evaluateManualBlockers({
       headOid,
@@ -583,7 +609,9 @@ test('未解决 blocker 和 resolved 后的新 veto 仍保持 fail-closed', () =
     'The functionality blocker has not been resolved.',
     '发布阻断尚未修复。',
     'The release blocker is fixed, but do not merge.',
+    'The merge blocker was fixed but is back.',
     '功能阻断已解决，但当前不要合并。',
+    '功能阻断已解决，但又出现了。',
   ]) {
     const result = evaluateManualBlockers({
       headOid,
@@ -702,8 +730,11 @@ test('独立消息中的当前 head 无条件放行仍可解除较早 veto', () 
 test('adversative 未签字条件不能伪装成当前 head 无条件放行', () => {
   for (const body of [
     `LGTM ${headOid.slice(0, 7)}, but Alice has not signed off.`,
+    `LGTM ${headOid.slice(0, 7)}, but Alice should sign off.`,
+    `LGTM ${headOid.slice(0, 7)}, but security ought to sign off.`,
     `LGTM ${headOid.slice(0, 7)}, however security has not signed off.`,
     `可以合并 ${headOid.slice(0, 7)}，但 Alice 尚未签字。`,
+    `可以合并 ${headOid.slice(0, 7)}，但 Alice 应该签字。`,
   ]) {
     const result = evaluateManualBlockers({
       headOid,

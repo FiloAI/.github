@@ -404,12 +404,19 @@ test('reviewer 明确反对 separate-concern 处理不能命中 acceptance', () 
   for (const rejection of [
     'I disagree that this is a separate concern; fix it.',
     'I disagree with treating this as a separate concern.',
+    'I oppose accepting this as a separate concern.',
+    'I oppose treating this separately.',
+    'I am against treating this as a separate concern.',
+    'I am against handling this separately.',
+    'My opposition to separate handling remains.',
     'I reject treating this as a separate concern.',
     'I object to treating this as a separate concern.',
     'I refuse to accept this as a separate concern.',
     'I decline to accept this as a separate concern.',
     'I DECLINED TO ACCEPT this as a separate concern.',
     'My refusal to accept this as a separate concern remains unchanged.',
+    '我反对把它作为独立问题处理。',
+    '我不赞成单独处理这个取舍。',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,
@@ -437,6 +444,23 @@ test('reviewer 明确反对 separate-concern 处理不能命中 acceptance', () 
       reviewerReply: "I don't disagree that this is a separate concern.",
     })],
   }).satisfied, true)
+  for (const reviewerReply of [
+    "I don't oppose treating this as a separate concern.",
+    'I am not against treating this as a separate concern.',
+    'I am not opposed to treating this as a separate concern.',
+    'I have no opposition to treating this as a separate concern.',
+    '我不反对单独处理这个取舍。',
+    '我不是反对；我接受单独处理这个取舍。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, true, reviewerReply)
+  }
 })
 
 test('refuse/decline rejection 遵循 reviewer 时序且 current-head owner 可放行', () => {
@@ -1699,6 +1723,39 @@ test('同秒单边或不完整编辑证据仍保留历史 deferral', () => {
       }],
     }).satisfied, true, JSON.stringify(edit))
   }
+})
+
+test('长纯正文单边编辑无法证明历史时保守保留 deferral', () => {
+  const longOpaqueDiff = [
+    'Implementation completed with regression coverage and detailed verification notes.',
+    'This text is intentionally long enough that length heuristics cannot treat it as a fragment.',
+  ].join(' ')
+  const candidate = thread({
+    authorReply: 'Fixed and covered by regression tests.',
+    reviewerReply: null,
+  })
+  candidate.comments[1] = {
+    ...candidate.comments[1],
+    updated_at: '2026-08-25T03:03:00Z',
+    edits: [{ diff: longOpaqueDiff }],
+    edits_complete: true,
+  }
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'Confirmed fixed and resolved.',
+    created_at: '2026-08-25T03:04:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
 })
 
 test('作者编辑删除 deferral 措辞仍保留产品取舍门', () => {

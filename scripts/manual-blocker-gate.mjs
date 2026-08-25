@@ -6,7 +6,7 @@ const BLOCK_PATTERNS = [
   /(?:不同意|不确认|不允许|不批准|未批准)[^。！？!\n]{0,16}(?:合并|merge)/i,
   /(?:合并|merge)[^。！？!\n]{0,16}(?:阻断|阻塞|拦截|block)/i,
   /(?:功能|发布|合并)[^。！？!\n]{0,12}(?:阻断|阻塞)/i,
-  /\b(?:do\s+not|don't|cannot|can't|should\s+not|must\s+not)\s+merge\b|\bnot\s+ready\s+to\s+merge\b|\bnot\s+approved?\b|\bmerge\s+blocker\b/i,
+  /\b(?:do\s+not|don't|cannot|can't|should\s+not|must\s+not)\s+merge\b|\bnot\s+ready\s+to\s+merge\b|\bnot\s+approved?\b|\b(?:merge|release|functionality)\s+blocker\b/i,
 ]
 
 const EXPLICIT_VETO_PATTERN =
@@ -19,10 +19,10 @@ const CLAUSE_UNCERTAINTY =
   /[?？]|(?:吗|么|呢|吧)(?:$|[\s。！？!?，,；;])/i
 
 const PENDING_CONDITION =
-  /(?:不同意|不确认|不允许|不批准|未批准|不过|但是|但|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不)|\b(?:not\s+approved?|do\s+not\s+approve|don't\s+approve|but|however|still|need(?:s|ed)?\s+to|must|before)\b|\b(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b/i
+  /(?:不同意|不确认|不允许|不批准|未批准|不过|但是|但|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决)|待(?:修|处理|解决)|才能|之后再|之前不|前不|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后)|\b(?:not\s+approved?|do\s+not\s+approve|don't\s+approve|but|however|still|need(?:s|ed)?\s+to|must|before)\b|\b(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b/i
 
 const STANDALONE_APPROVAL_CONDITION =
-  /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:merge|merging)\b|^(?:如果|若|待|等到|需要先|必须先|先)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|\b(?:must|needs?\s+to|has\s+to)\b[^。！？!?；;\n]{0,80}\b(?:fix|pass|complete|resolve|sign\s*off|approve|succeed|green|ready|done|before\s+(?:merge|merging))\b/i
+  /^(?:after|when|once|if|unless|until|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b|\bbefore\s+(?:merge|merging)\b|^(?:如果|若|待|等到|需要先|必须先|先)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|\b(?:must|needs?\s+to|has\s+to)\b[^。！？!?；;\n]{0,80}\b(?:fix(?:ed)?|pass(?:ed)?|complete(?:d)?|resolve(?:d)?|sign(?:ed)?\s*off|approve(?:d)?|succeed(?:ed)?|green|ready|done|before\s+(?:merge|merging))\b/i
 
 const NON_BLOCKING_PATTERN =
   /(?:不能|不会|不应|不得)[^。！？!\n]{0,16}(?:阻塞|阻断|卡住|拦截)[^。！？!\n]{0,8}(?:合并|merge)|(?:不|未)(?:是|属于|构成|算作)[^。！？!\n]{0,16}(?:合并)?(?:门禁|阻塞|阻断|blocker)|(?:没有|无)(?:任何)?[^。！？!\n]{0,8}(?:合并)?(?:阻断|阻塞|blockers?)|(?:不存在|未发现)[^。！？!\n]{0,20}(?:合并阻断|合并阻塞|merge\s+blockers?)|\bno\s+(?:merge\s+)?blockers?\b|\bno\s+(?:merge\s+)?blockers?\s+found\b/i
@@ -56,13 +56,32 @@ function clausesFrom(body) {
     .filter(Boolean)
 }
 
-function referencesDifferentPr(text, prNumber) {
-  if (/\b(?:another|other)\s+(?:pull\s+request|pr)\b|(?:另一个|其它|其他)(?:\s*PR|拉取请求)/i.test(String(text || ''))) {
+function referencesCurrentPr(text, prNumber) {
+  const value = String(text || '')
+  if (/\b(?:this|current)\s+(?:pull\s+request|pr)\b|(?:本|当前)(?:\s*PR|拉取请求)/i.test(value)) {
     return true
   }
   if (!Number.isInteger(prNumber)) return false
-  const references = [...String(text || '').matchAll(/\b(?:pull\s+request|pr)\s*#?(\d+)\b/gi)]
+  const references = [...value.matchAll(/\b(?:pull\s+request|pr)\s*#?(\d+)\b/gi)]
+  return references.some((match) => Number(match[1]) === prNumber)
+}
+
+function referencesDifferentPr(text, prNumber) {
+  const value = String(text || '')
+  if (referencesCurrentPr(value, prNumber)) return false
+  if (/\b(?:another|other)\s+(?:pull\s+request|pr)\b|(?:另一个|其它|其他)(?:\s*PR|拉取请求)/i.test(value)) {
+    return true
+  }
+  if (!Number.isInteger(prNumber)) return false
+  const references = [...value.matchAll(/\b(?:pull\s+request|pr)\s*#?(\d+)\b/gi)]
   return references.some((match) => Number(match[1]) !== prNumber)
+}
+
+function withoutNonBlockingSignals(text) {
+  const flags = NON_BLOCKING_PATTERN.flags.includes('g')
+    ? NON_BLOCKING_PATTERN.flags
+    : `${NON_BLOCKING_PATTERN.flags}g`
+  return String(text || '').replace(new RegExp(NON_BLOCKING_PATTERN.source, flags), ' ')
 }
 
 function classifyTextIntent(body, headOid, prNumber) {
@@ -73,9 +92,9 @@ function classifyTextIntent(body, headOid, prNumber) {
     const clauseUncertainty = CLAUSE_UNCERTAINTY.test(clause)
     const pendingCondition = PENDING_CONDITION.test(clause)
 
-    const explicitBlock = EXPLICIT_VETO_PATTERN.test(clause)
-      || (!NON_BLOCKING_PATTERN.test(clause)
-        && BLOCK_PATTERNS.some((pattern) => pattern.test(clause)))
+    const blockableClause = withoutNonBlockingSignals(clause)
+    const explicitBlock = EXPLICIT_VETO_PATTERN.test(blockableClause)
+      || BLOCK_PATTERNS.some((pattern) => pattern.test(blockableClause))
     if (explicitBlock) {
       intent = 'block'
     }

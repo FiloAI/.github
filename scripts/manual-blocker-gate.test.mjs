@@ -300,6 +300,21 @@ test('同一段先说无 CI 阻断、随后明确不要合并时仍然阻塞', (
   }).satisfied, false)
 })
 
+test('同一分句的局部非阻塞说明不能吞掉真实功能阻断', () => {
+  for (const body of [
+    'CI 不会阻塞合并，但功能阻断。',
+    'No merge blocker from CI, but this is a release blocker.',
+  ]) {
+    assert.equal(evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'reviewer', permission: 'write', body,
+        created_at: '2026-08-24T00:00:00Z',
+      }],
+    }).satisfied, false, body)
+  }
+})
+
 test('测试通过不能解除人工合并阻止', () => {
   const result = evaluateManualBlockers({
     headOid,
@@ -321,6 +336,9 @@ test('条件性放行无论分句顺序都不能解除人工阻止', () => {
     `LGTM ${headOid.slice(0, 7)} when the tests pass`,
     `After the migration is fixed. LGTM ${headOid.slice(0, 7)}`,
     `LGTM ${headOid.slice(0, 7)}. Once the migration is resolved.`,
+    `LGTM ${headOid.slice(0, 7)}. The migration must be fixed.`,
+    `迁移修复后可以合并 ${headOid.slice(0, 7)}`,
+    `等 Alice 签字后，可以合并 ${headOid.slice(0, 7)}`,
   ]) {
     const result = evaluateManualBlockers({
       headOid,
@@ -499,4 +517,23 @@ test('明确属于其它 PR 的条件不会污染当前 PR 放行', () => {
     })
     assert.equal(result.satisfied, true, body)
   }
+})
+
+test('同时约束当前 PR 与其它 PR 的条件必须保留人工阻止', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    prNumber: 22,
+    comments: [
+      {
+        login: 'reviewer', permission: 'write', body: 'Do not merge.',
+        created_at: '2026-08-24T00:00:00Z',
+      },
+      {
+        login: 'reviewer', permission: 'write',
+        body: `PR #123 and this PR must both be fixed first. LGTM ${headOid.slice(0, 7)}.`,
+        created_at: '2026-08-24T00:01:00Z',
+      },
+    ],
+  })
+  assert.equal(result.satisfied, false)
 })

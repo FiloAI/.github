@@ -70,6 +70,9 @@ test('by-design 产品取舍必须取得 reviewer 或 current-head owner 放行'
     'This is by design; no change needed.',
     'This is expected behavior.',
     'We will keep this as-is.',
+    'This is working as intended; no changes needed.',
+    'This is intended behavior.',
+    'No changes are needed.',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,
@@ -486,6 +489,44 @@ test('P2 后的作者 deferral 在 finding 升级为 P1 后仍需授权', () => 
   })
   assert.equal(result.satisfied, false)
   assert.equal(result.blockers[0].severity, 'P1')
+})
+
+test('未标 severity 的 finding 在作者 deferral 后标为 P1 仍需授权', () => {
+  const candidate = {
+    is_resolved: true,
+    is_outdated: false,
+    resolved_by: 'author',
+    comments: [
+      {
+        login: 'codex', body: 'This behavior changes the product contract.',
+        created_at: '2026-08-25T03:00:00Z',
+      },
+      {
+        login: 'author', body: 'Out of scope; defer to a follow-up PR.',
+        created_at: '2026-08-25T03:01:00Z',
+      },
+      {
+        login: 'codex', body: 'Marking this finding as P1.',
+        created_at: '2026-08-25T03:02:00Z',
+      },
+    ],
+  }
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
 })
 
 test('P3 严重度生命周期保留 deferral，最终只 gate P0/P1', () => {
@@ -1156,6 +1197,61 @@ test('生产形状的 UserContentEdit.diff 保留被删除的 deferral 历史', 
     headOid: head,
     authorLogin: 'author',
     threads: [normalized],
+  }).satisfied, true)
+})
+
+test('补丁或空 edit diff 无法恢复正文时保持产品取舍门 fail-closed', () => {
+  for (const diff of [
+    '@@ -1 +1 @@\n-Out of scope; defer to a follow-up PR.\n+Clarified the reply.',
+    null,
+  ]) {
+    const normalized = normalizeProductDecisionThread({
+      isResolved: true,
+      isOutdated: false,
+      resolvedBy: { login: 'author' },
+      comments: { nodes: [
+        {
+          author: { login: 'codex' },
+          body: '![P1 Badge] P1 behavior regression',
+          createdAt: '2026-08-25T03:00:00Z',
+          updatedAt: '2026-08-25T03:00:00Z',
+          pullRequestReview: null,
+          userContentEdits: { pageInfo: { hasNextPage: false }, nodes: [] },
+        },
+        {
+          author: { login: 'author' },
+          body: 'Clarified the reply.',
+          createdAt: '2026-08-25T03:01:00Z',
+          updatedAt: '2026-08-25T03:03:00Z',
+          pullRequestReview: null,
+          userContentEdits: {
+            pageInfo: { hasNextPage: false },
+            nodes: [{ editedAt: '2026-08-25T03:03:00Z', diff }],
+          },
+        },
+      ] },
+    })
+
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [normalized],
+    }).satisfied, false, String(diff))
+  }
+
+  const ordinaryEdit = thread({
+    authorReply: 'Clarified the reply.',
+    reviewerReply: null,
+  })
+  ordinaryEdit.comments[1] = {
+    ...ordinaryEdit.comments[1],
+    updated_at: '2026-08-25T03:03:00Z',
+    edits: [{ diff: 'Clarified reply.' }],
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [ordinaryEdit],
   }).satisfied, true)
 })
 

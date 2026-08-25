@@ -13,6 +13,12 @@ const PRODUCT_DEFERRAL_PATTERN =
 const NEGATED_PRODUCT_DEFERRAL_PATTERN =
   /(?:不是|并非|并不是)\s*(?:产品(?:决定|决策|取舍)|不改|不修|暂不处理|超出(?:本\s*PR\s*)?范围)|\b(?:is\s+not|isn't|was\s+not|wasn't|not)\s+(?:a\s+)?(?:product\s+(?:decision|trade-?off)|by\s+design|expected\s+behavio(?:u)?r|out\s+of\s+scope|defer(?:red)?)\b|\b(?:do\s+not|don't|should\s+not|shouldn't|cannot|can't|won't|not)\s+keep(?:\s+(?:this|it))?\s+as[-\s]+is\b/gi
 
+const INTENDED_BEHAVIOR_DEFERRAL_PATTERN =
+  /\b(?:working\s+as\s+intended|intended\s+behavio(?:u)?r|no\s+changes?\s+(?:are\s+)?needed)\b/i
+
+const NEGATED_INTENDED_BEHAVIOR_PATTERN =
+  /\b(?:is\s+not|isn't|was\s+not|wasn't|not)\s+(?:working\s+as\s+intended|intended\s+behavio(?:u)?r)\b/gi
+
 const REVIEWER_ACCEPTANCE_PATTERN =
   /(?:接受|同意)[^。！？!?\n]{0,32}(?:延期|取舍|范围(?:说明)?|另开|后续处理|单独处理)|(?:确认|核实)[^。！？!?\n]{0,24}(?:已|已经)(?:修复|处理|解决)|不再阻塞|不阻塞|非阻塞|撤回(?:阻止|阻塞|反对|异议)|可以另开|单独处理|\b(?:accept(?:ed)?|agree(?:d)?)\b[^.。！？!?\n]{0,40}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr))\b|\b(?:confirm(?:ed)?|verif(?:y|ied))\b[^.。！？!?\n]{0,32}\b(?:fixed|addressed|resolved)\b|\bmakes?\s+sense\b[^.。！？!?\n]{0,40}\b(?:scope|separate|follow-?up)\b|\b(?:not\s+a\s+blocker|non-?blocking|withdraw(?:n)?\s+(?:the\s+)?(?:blocker|objection|concern|request\s+for\s+changes)|separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
 
@@ -95,6 +101,20 @@ function editTexts(comment) {
   return (comment?.edits || [])
     .map((edit) => String(edit?.body ?? edit?.diff ?? ''))
     .filter(Boolean)
+}
+
+function hasOpaqueDispositionEdit(comment) {
+  if (commentTime(comment) <= dispositionTime(comment)) return false
+  if (comment?.edits_complete === false) return true
+  const edits = comment?.edits || []
+  if (edits.length === 0) return true
+  return edits.every((edit) => {
+    const value = String(edit?.body ?? edit?.diff ?? '')
+    if (!value) return true
+    if (authorDispositionKind(value)) return false
+    if (/(?:^|\n)(?:@@|[+-])/.test(value)) return true
+    return isLikelyPatchFragment(value, comment.body, authorDispositionKind)
+  })
 }
 
 function isLikelyPatchFragment(value, currentBody, dispositionKind) {
@@ -184,7 +204,7 @@ function severityDispositionTime(comment) {
 function authorDispositionEvents(comment, index) {
   const currentKind = authorDispositionKind(comment.body)
   const historicalDeferral = editTexts(comment).some((body) => isProductDeferral(body))
-    || (comment?.edits_complete === false && commentTime(comment) > dispositionTime(comment))
+    || hasOpaqueDispositionEdit(comment)
   const semanticEdit = hasSemanticDispositionEdit(comment, authorDispositionKind)
   const at = semanticEdit ? commentTime(comment) : dispositionTime(comment)
 
@@ -211,8 +231,11 @@ function authorDispositionEvents(comment, index) {
 }
 
 function isProductDeferral(body) {
-  const value = String(body || '').replace(NEGATED_PRODUCT_DEFERRAL_PATTERN, ' ')
+  const value = String(body || '')
+    .replace(NEGATED_PRODUCT_DEFERRAL_PATTERN, ' ')
+    .replace(NEGATED_INTENDED_BEHAVIOR_PATTERN, ' ')
   return PRODUCT_DEFERRAL_PATTERN.test(value)
+    || INTENDED_BEHAVIOR_DEFERRAL_PATTERN.test(value)
 }
 
 function isFindingFixedClaim(body) {
@@ -465,7 +488,12 @@ export function evaluateProductDecisionGate({
 
     // Severity follows the latest explicit marker. Preserve author disposition
     // history across both P2 -> P1 escalation and P1 -> P2 downgrade.
-    const findingStartIndex = firstFinding.index
+    const reviewerStartIndex = thread.comments.findIndex((comment) => (
+      String(comment.login || '').toLowerCase() === reviewerLogin
+    ))
+    const findingStartIndex = reviewerStartIndex >= 0
+      ? Math.min(firstFinding.index, reviewerStartIndex)
+      : firstFinding.index
     const severity = latestFinding.severity
     const highFindingAt = latestFinding.at
     const authorEvents = thread.comments

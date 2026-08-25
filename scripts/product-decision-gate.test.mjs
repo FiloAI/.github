@@ -453,6 +453,46 @@ test('严重度跟随最新明确标记，支持 P1 降级 P2 后再升级 P1', 
   }).satisfied, false)
 })
 
+test('只有原 finding reviewer 可以改变严重级别', () => {
+  const p1Candidate = thread({
+    severity: 'P1',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  p1Candidate.comments.push({
+    login: 'other-reviewer', body: 'Downgrading this finding to P2.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [p1Candidate],
+  }).satisfied, false)
+
+  p1Candidate.comments.push({
+    login: 'codex', body: 'Downgrading this finding to P2.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [p1Candidate],
+  }).satisfied, true)
+
+  const p2Candidate = thread({
+    severity: 'P2',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  p2Candidate.comments.push({
+    login: 'other-reviewer', body: 'Escalating this finding to P1.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [p2Candidate],
+  }).satisfied, true)
+})
+
 test('否定式修复声明不能清除已有产品 deferral', () => {
   for (const body of [
     'This is not fixed.',
@@ -470,6 +510,45 @@ test('否定式修复声明不能清除已有产品 deferral', () => {
       threads: [candidate],
     }).satisfied, false, body)
   }
+})
+
+test('作者撤回 fixed claim 会使旧 reviewer 确认和旧 owner 放行失效', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  candidate.comments.push(
+    {
+      login: 'author', body: 'Fixed and covered by regression tests.',
+      created_at: '2026-08-25T03:02:00Z',
+    },
+    {
+      login: 'codex', body: 'Confirmed fixed and resolved.',
+      created_at: '2026-08-25T03:03:00Z',
+    },
+    {
+      login: 'author', body: 'Correction: this is not fixed.',
+      created_at: '2026-08-25T03:04:00Z',
+    },
+  )
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    reviews: [{
+      login: 'zqchris', state: 'APPROVED', commit_id: head,
+      submitted_at: '2026-08-25T03:03:30Z',
+    }],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'Accepted as a separate concern; non-blocking.',
+    created_at: '2026-08-25T03:05:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
 })
 
 test('同秒 APPROVED 与 thread rejection 以阻塞 disposition 为准', () => {

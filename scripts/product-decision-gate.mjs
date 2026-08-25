@@ -74,6 +74,10 @@ function isFindingFixedClaim(body) {
   return !NEGATED_FINDING_FIXED_PATTERN.test(value) && FINDING_FIXED_PATTERN.test(value)
 }
 
+function isFindingFixRetraction(body) {
+  return NEGATED_FINDING_FIXED_PATTERN.test(String(body || ''))
+}
+
 function severityOf(body) {
   const match = String(body || '').match(SEVERITY_PATTERN)
   const level = match?.slice(1).find(Boolean)
@@ -257,8 +261,13 @@ export function evaluateProductDecisionGate({
       .filter(({ comment }) => String(comment.login || '').toLowerCase() !== author)
     const firstFinding = reviewerComments.find(({ comment }) => severityOf(comment.body))
     if (!firstFinding) continue
+    const finding = firstFinding.comment
+    const reviewerLogin = String(finding.login || '').toLowerCase()
     const findingEvents = reviewerComments
-      .filter(({ index }) => index >= firstFinding.index)
+      .filter(({ comment, index }) => (
+        index >= firstFinding.index
+          && String(comment.login || '').toLowerCase() === reviewerLogin
+      ))
       .map(({ comment, index }) => ({
         comment,
         index,
@@ -271,19 +280,21 @@ export function evaluateProductDecisionGate({
     // Severity follows the latest explicit marker. Preserve author disposition
     // history across both P2 -> P1 escalation and P1 -> P2 downgrade.
     const findingStartIndex = findingEvents[0].index
-    const finding = findingEvents[0].comment
     const severity = latestFinding.severity
     const highFindingAt = commentTime(latestFinding.comment)
-    const reviewerLogin = String(finding.login || '').toLowerCase()
     const authorEvents = thread.comments
       .map((comment, index) => ({ comment, index }))
       .filter(({ comment, index }) => (
         index > findingStartIndex
           && String(comment.login || '').toLowerCase() === author
-          && (isProductDeferral(comment.body) || isFindingFixedClaim(comment.body))
+          && (isProductDeferral(comment.body)
+            || isFindingFixedClaim(comment.body)
+            || isFindingFixRetraction(comment.body))
       ))
       .map(({ comment, index }) => ({
-        kind: isProductDeferral(comment.body) ? 'deferral' : 'fixed',
+        kind: isProductDeferral(comment.body)
+          ? 'deferral'
+          : isFindingFixRetraction(comment.body) ? 'fix-retracted' : 'fixed',
         index,
         at: commentTime(comment),
       }))
@@ -291,11 +302,8 @@ export function evaluateProductDecisionGate({
 
     const latestDeferral = authorEvents.filter((event) => event.kind === 'deferral').at(-1)
     if (!latestDeferral) continue
-    const latestEvent = authorEvents.at(-1)
     const deferralIndex = latestDeferral.index
-    const evidenceEvent = latestEvent?.kind === 'fixed' && latestEvent.at >= latestDeferral.at
-      ? latestEvent
-      : latestDeferral
+    const evidenceEvent = authorEvents.at(-1)
     const reviewerDisposition = latestReviewerDisposition({
       thread,
       reviewerLogin,
@@ -311,7 +319,7 @@ export function evaluateProductDecisionGate({
       severity,
       reviewer: finding.login || 'unknown',
       at: Math.max(
-        commentTime(thread.comments[deferralIndex]) || Number.MAX_SAFE_INTEGER,
+        evidenceEvent.at || commentTime(thread.comments[deferralIndex]) || Number.MAX_SAFE_INTEGER,
         highFindingAt,
       ),
     })

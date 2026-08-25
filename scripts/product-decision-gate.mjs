@@ -167,8 +167,9 @@ function severityDispositionTime(comment) {
 
   const currentSeverity = severityDispositionKind(comment.body)
   const severityChanged = editTexts(comment).some((body) => {
+    if (isLikelyPatchFragment(body, comment.body, severityDispositionKind)) return false
     const historicalSeverity = severityDispositionKind(body)
-    return historicalSeverity && historicalSeverity !== currentSeverity
+    return historicalSeverity !== currentSeverity
   })
   if (severityChanged) return updatedAt
 

@@ -699,6 +699,48 @@ test('severity 未变化的说明编辑不会重排严重度生命周期', () =>
   }).satisfied, true)
 })
 
+test('编辑新增 severity 时按编辑后的有效时间排序', () => {
+  const editedToP1 = thread({
+    severity: 'P1',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  editedToP1.comments[0] = {
+    ...editedToP1.comments[0],
+    updated_at: '2026-08-25T03:04:00Z',
+    edits: [{ body: 'Behavior regression without a severity label.' }],
+  }
+  editedToP1.comments.splice(1, 0, {
+    login: 'codex', body: 'Downgrading this finding to P3.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  editedToP1.comments[2].created_at = '2026-08-25T03:03:00Z'
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [editedToP1],
+  }).satisfied, false)
+
+  const editedToP3 = thread({
+    severity: 'P3',
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+  })
+  editedToP3.comments[0] = {
+    ...editedToP3.comments[0],
+    updated_at: '2026-08-25T03:04:00Z',
+    edits: [{ body: 'Behavior regression without a severity label.' }],
+  }
+  editedToP3.comments.splice(1, 0, {
+    login: 'codex', body: 'Escalating this finding to P1.',
+    created_at: '2026-08-25T03:02:00Z',
+  })
+  editedToP3.comments[2].created_at = '2026-08-25T03:03:00Z'
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [editedToP3],
+  }).satisfied, true)
+})
+
 test('severity 同秒并列时保守保留 P0/P1', () => {
   const candidate = thread({
     severity: 'P2',

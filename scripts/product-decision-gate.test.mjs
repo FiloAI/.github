@@ -216,6 +216,39 @@ test('明确绑定 finding 或产品取舍的 non-blocking 说明仍可接受', 
   }
 })
 
+test('reviewer 拒绝 scoped non-blocking 判断时不能被嵌入的肯定片段放行', () => {
+  for (const reviewerReply of [
+    'I disagree that this finding is non-blocking.',
+    'I reject the claim that this finding is non-blocking.',
+    'I disagree: this finding is non-blocking.',
+    '我拒绝“当前 finding 不阻塞”的判断。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, false, reviewerReply)
+  }
+
+  for (const reviewerReply of [
+    'I do not disagree that this finding is non-blocking.',
+    'I have no objection: this finding is non-blocking.',
+    '我并不反对当前 finding 不阻塞。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, true, reviewerReply)
+  }
+})
+
 test('仅限 CI 或测试的 non-blocking 说明不能接受产品取舍', () => {
   for (const reviewerReply of [
     'This finding is non-blocking in CI only.',
@@ -2750,6 +2783,126 @@ test('owner marker 只有编辑历史证明后置新增时才能放行', () => {
   }
 })
 
+test('owner 撤回产品取舍授权会覆盖旧 marker，fresh marker 可再次放行', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  const marker = ownerApprovalMarker(head)
+  const comments = [
+    { login: 'jerboy', body: marker, created_at: '2026-08-25T03:02:00Z' },
+    {
+      login: 'jerboy', body: 'I withdraw my approval of this product deferral.',
+      created_at: '2026-08-25T03:03:00Z',
+    },
+  ]
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    comments,
+  }).satisfied, false)
+
+  comments.push({
+    login: 'zqchris', body: marker, created_at: '2026-08-25T03:04:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    comments,
+  }).satisfied, true)
+})
+
+test('owner 授权与撤回同秒时按可证明顺序或 fail-closed 判定', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  const marker = ownerApprovalMarker(head)
+  const withdrawal = {
+    login: 'jerboy', body: '撤回我对这个产品取舍的放行。',
+    created_at: '2026-08-25T03:02:00Z',
+  }
+  const approval = {
+    login: 'jerboy', body: marker,
+    created_at: '2026-08-25T03:02:00Z',
+  }
+
+  for (const [comments, satisfied] of [
+    [[approval, withdrawal], false],
+    [[withdrawal, approval], true],
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+      comments,
+    }).satisfied, satisfied)
+  }
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    comments: [withdrawal],
+    reviews: [{
+      login: 'zqchris', state: 'APPROVED', commit_id: head,
+      submitted_at: '2026-08-25T03:02:00Z',
+    }],
+  }).satisfied, false)
+})
+
+test('owner 撤回只作用于目标 head，后续 current-head review 可重新授权', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  const marker = ownerApprovalMarker(head)
+  const wrongHeadWithdrawal = {
+    login: 'jerboy', body: 'I revoke the product-decision authorization for deadbeef.',
+    created_at: '2026-08-25T03:03:00Z',
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    comments: [
+      { login: 'jerboy', body: marker, created_at: '2026-08-25T03:02:00Z' },
+      wrongHeadWithdrawal,
+    ],
+  }).satisfied, true)
+
+  const currentHeadWithdrawal = {
+    login: 'jerboy', body: `I revoke the product-decision authorization for ${head.slice(0, 8)}.`,
+    created_at: '2026-08-25T03:03:00Z',
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    comments: [
+      { login: 'jerboy', body: marker, created_at: '2026-08-25T03:02:00Z' },
+      currentHeadWithdrawal,
+    ],
+    reviews: [{
+      login: 'zqchris', state: 'APPROVED', commit_id: head,
+      submitted_at: '2026-08-25T03:04:00Z',
+    }],
+  }).satisfied, true)
+})
+
+test('owner marker 编辑为撤回时按编辑后的授权生命周期阻塞', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  const marker = ownerApprovalMarker(head)
+  const withdrawal = 'This product decision approval has been withdrawn.'
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    comments: [{
+      login: 'jerboy', body: withdrawal,
+      created_at: '2026-08-25T03:02:00Z', updated_at: '2026-08-25T03:04:00Z',
+      edits: [
+        { edited_at: '2026-08-25T03:02:00Z', body: marker },
+        { edited_at: '2026-08-25T03:04:00Z', body: withdrawal },
+      ],
+      edits_complete: true,
+    }],
+  }).satisfied, false)
+})
+
 test('疑问式或不确定式 acceptance 不是 reviewer 明确放行', () => {
   for (const reviewerReply of [
     'Can we accept this as a separate concern?',
@@ -3013,6 +3166,65 @@ test('not going to fix 或 address 是明确产品取舍延期', () => {
       }],
     }).satisfied, true, authorReply)
   }
+})
+
+test('明确无修复意图属于产品取舍 deferral', () => {
+  for (const authorReply of [
+    "We don't intend to fix this.",
+    'We did not intend to address the finding.',
+    'We never intended to resolve this.',
+    'We have not intended to change this behavior.',
+    'We had never intended to make the requested change.',
+    'We are not intending to fix the issue.',
+    'We have no intention of addressing this.',
+    'Our intention was not to change this implementation.',
+    '我们不打算修复这个问题。',
+    '我们从未计划处理这个 finding。',
+    '我们无意修改这个行为。',
+    '我们的意图是不实现这个请求的改动。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({ authorReply })],
+    }).satisfied, false, authorReply)
+  }
+})
+
+test('无修复意图分类保持技术对象边界并复用既有授权路径', () => {
+  for (const authorReply of [
+    "We don't intend to change the tests.",
+    'We have no intention of updating the fixture.',
+    'We intend to fix this in this PR.',
+    'We have every intention of addressing this finding.',
+    '我们不打算修改测试夹具。',
+    '我们计划在本 PR 修复这个问题。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({ authorReply })],
+    }).satisfied, true, authorReply)
+  }
+
+  const authorReply = "We don't intend to fix this."
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [thread({
+      authorReply,
+      reviewerReply: 'Accepted as a product trade-off; non-blocking.',
+    })],
+  }).satisfied, true)
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [thread({ authorReply })],
+    comments: [{
+      login: 'jerboy', body: ownerApprovalMarker(head),
+      created_at: '2026-08-25T03:02:00Z',
+    }],
+  }).satisfied, true)
 })
 
 test('积极进行中的当前修复不是 no-fix disposition', () => {

@@ -19,6 +19,9 @@ const AUTHOR_EXPLICIT_REFUSAL_PATTERN =
 const AUTHOR_DECISION_NO_FIX_PATTERN =
   /\b(?:i|we)(?:\s+(?:have|had)|['’]ve)?\s+(?:decid(?:e|ed)|determin(?:e|ed)|cho(?:ose|se|sen)|opt(?:ed)?)\s+(?:not\s+to|against)\s+(?:(?:be\s+)?(?:fix(?:ing)?|address(?:ing)?|resolv(?:e|ing))\s+(?:(?:this|it)|the\s+(?:issue|finding|behavio(?:u)?r))|chang(?:e|ing)\s+(?:(?:this|it)|the\s+(?:behavio(?:u)?r|implementation))|(?:mak(?:e|ing)|implement(?:ing)?)\s+(?:(?:this|that|the\s+requested)\s+)?changes?)(?=$|[.。！？!?,，;；:\n]|\s+(?:(?:in\s+(?:this\s+)?(?:pr|pull\s+request))|here|now|before|after|until|because)\b)/i
 
+const AUTHOR_INTENTION_NO_FIX_PATTERN =
+  /(?:我|我们)(?:(?:无意|(?:从未|没有|没|并无|无|不)\s*(?:打算|计划|意图|意愿|准备))|(?:的)?(?:打算|计划|意图|意愿)\s*(?:是|为)\s*(?:不|不会))[^。！？!?,，;；:\n]{0,24}(?:(?:修复|处理|解决)\s*(?:这个|该|此)?\s*(?:问题|finding|行为)|修改\s*(?:这个|该|此)?\s*(?:行为|实现)|(?:作出|进行|实现)\s*(?:(?:这个|该|此)\s*)?(?:所要求的|请求的)?\s*(?:修改|改动|变更))(?=$|[.。！？!?,，;；:\n]|\s+(?:在本\s*PR|这里|现在|目前|合并前|因为))|\b(?:(?:i|we)\s+(?:(?:(?:do|did)\s+not|don['’]t|didn['’]t)\s+intend|never\s+intended|(?:have|has|had)\s+(?:not|never)\s+intended|(?:am|are|was|were)\s+not\s+intending)\s+to|(?:i|we)\s+(?:have|has|had)\s+no\s+intention\s+of|(?:my|our)\s+intention\s+(?:is|was|has\s+been|had\s+been)\s+not\s+to)\s+(?:(?:fix(?:ing)?|address(?:ing)?|resolv(?:e|ing))\s+(?:(?:this|it)|the\s+(?:issue|finding|behavio(?:u)?r))|chang(?:e|ing)\s+(?:(?:this|it)(?:\s+(?:behavio(?:u)?r|implementation))?|the\s+(?:behavio(?:u)?r|implementation))|(?:mak(?:e|ing)|implement(?:ing)?)\s+(?:(?:this|that|the\s+requested)\s+)?changes?)(?=$|[.。！？!?,，;；:\n]|\s+(?:(?:in\s+(?:this\s+)?(?:pr|pull\s+request))|here|now|before|after|until|because)\b)/i
+
 const AUTHOR_INABILITY_NO_FIX_PATTERN =
   /(?:我|我们)?(?:目前|现在|当前)?\s*(?:无法|不能|没法)\s*(?:在(?:本|这个|该)\s*PR(?:中|里)?\s*)?(?:(?:修复|处理|解决|修改)\s*(?:这个|该|此)?\s*(?:问题|finding|行为|实现)|(?:作出|进行|实现)\s*(?:这个|该|此|所要求的|请求的)?\s*(?:修改|改动|变更))(?=$|[.。！？!?,，;；:\n]|\s+(?:在本\s*PR|这里|现在|目前|合并前|因为))|\b(?:(?:(?:i|we)\s+(?:(?:can(?:not|\s+not)|can['’]t|could\s+not|couldn['’]t)\s+|(?:am|are|was|were)\s+(?:(?:currently|still)\s+)?(?:unable|not\s+able)\s+to\s+|(?:have|had)\s+been\s+unable\s+to\s+)|(?:cannot|can['’]t)\s+)(?:(?:fix|address|resolve)\s+(?:(?:this|it)|(?:this|that|the)\s+(?:issue|finding|behavio(?:u)?r))|change\s+(?:(?:this|it)|(?:this|that|the)\s+(?:behavio(?:u)?r|implementation))|(?:make|implement)\s+(?:(?:this|that|the\s+requested)\s+)?changes?)|(?:(?:this|it)|(?:this|that|the)\s+(?:issue|finding|behavio(?:u)?r))\s+(?:can(?:not|\s+not)|can['’]t|could\s+not|couldn['’]t)\s+be\s+(?:fixed|addressed|resolved|changed)|(?:this|that|the\s+requested)\s+changes?\s+(?:can(?:not|\s+not)|can['’]t|could\s+not|couldn['’]t)\s+be\s+(?:made|implemented))(?=$|[.。！？!?,，;；:\n]|\s+(?:(?:in\s+(?:this\s+)?(?:pr|pull\s+request))|here|now|yet|before|after|until|because)\b)/i
 
@@ -57,6 +60,12 @@ const REVIEWER_SCOPED_NON_BLOCKING_TECHNICAL_SUBJECT_PATTERN =
 
 const REVIEWER_SCOPED_NON_BLOCKING_LIMITATION_PATTERN =
   /\b(?:non-?blocking|not\s+a\s+blocker)\b[^.。！？!?；;\n]{0,32}(?:\b(?:only|solely)?\s*(?:in|for|within|with\s+respect\s+to)\s+(?:ci|tests?|build|checks?|jobs?|deployment)(?:\s+(?:only|alone))?\b|\blimited\s+to\s+(?:ci|tests?|build|checks?|jobs?|deployment)\b|\b(?:only\s+)?if\b[^.。！？!?；;\n]{0,24}\b(?:ci|tests?|build|checks?|jobs?|deployment)\b|\b(?:subject\s+to|provided(?:\s+that)?)\b[^.。！？!?；;\n]{0,24}\b(?:ci|tests?|build|checks?|jobs?|deployment)\b)|(?:不再阻塞|不阻塞|非阻塞)[^。！？!?；;\n]{0,24}(?:(?:仅|只)?(?:限)?(?:在|对|针对|就)\s*(?:CI|测试|构建|检查|任务|部署)|(?:仅限|只限)\s*(?:CI|测试|构建|检查|任务|部署)|(?:仅当|只有|前提是|取决于)[^。！？!?；;\n]{0,16}(?:CI|测试|构建|检查|任务|部署))/i
+
+const REVIEWER_SCOPED_NON_BLOCKING_REJECTION_PATTERN =
+  /(?:不同意|反对|拒绝|不认可|不赞成)[^。！？!?；;\n]{0,72}(?:(?:(?:当前|这个|此|该)?\s*finding|产品取舍|延期|范围决定)[^。！？!?；;\n]{0,32}(?:不再阻塞|不阻塞|非阻塞)|(?:不再阻塞|不阻塞|非阻塞)[^。！？!?；;\n]{0,32}(?:(?:当前|这个|此|该)?\s*finding|产品取舍|延期|范围决定))|\b(?:disagree(?:s|d|ing)?|reject(?:s|ed|ing)?|oppos(?:e|es|ed|ing)|object(?:s|ed|ing)?\s+to)\b[^.。！？!?；;\n]{0,96}\b(?:(?:(?:this|that|the|current|proposed|reported|P[01])\s+)?(?:finding|deferral|product\s+trade-?off|scope(?:\s+decision)?)\b[^.。！？!?；;\n]{0,32}\b(?:non-?blocking|not\s+a\s+blocker)\b|(?:non-?blocking|not\s+a\s+blocker)\b[^.。！？!?；;\n]{0,32}\b(?:(?:this|that|the|current|proposed|reported|P[01])\s+)?(?:finding|deferral|product\s+trade-?off|scope(?:\s+decision)?)\b)/i
+
+const NEGATED_REVIEWER_SCOPED_NON_BLOCKING_REJECTION_PATTERN =
+  /(?:不|并不|并非|不是)\s*(?:不同意|反对|拒绝|不认可|不赞成)|\b(?:(?:(?:do|does|did)\s+not|don['’]t|doesn['’]t|didn['’]t|never)\s+(?:disagree|oppose|reject|object)|(?:have|has|had)\s+no\s+(?:objection|opposition))\b/i
 
 const REVIEWER_NON_BLOCKING_LIMITATION_FRAGMENT_PATTERN =
   /^(?:\b(?:only|solely)?\s*(?:in|for|within|with\s+respect\s+to)\s+(?:ci|tests?|build|checks?|jobs?|deployment)(?:\s+(?:only|alone))?\b|\blimited\s+to\s+(?:ci|tests?|build|checks?|jobs?|deployment)\b|\b(?:only\s+)?if\b[^.。！？!?；;\n]{0,24}\b(?:ci|tests?|build|checks?|jobs?|deployment)\b|\b(?:subject\s+to|provided(?:\s+that)?)\b[^.。！？!?；;\n]{0,24}\b(?:ci|tests?|build|checks?|jobs?|deployment)\b|(?:仅|只)?(?:限)?(?:在|对|针对|就)\s*(?:CI|测试|构建|检查|任务|部署)|(?:仅限|只限)\s*(?:CI|测试|构建|检查|任务|部署)|(?:仅当|只有|前提是|取决于)[^。！？!?；;\n]{0,16}(?:CI|测试|构建|检查|任务|部署))/i
@@ -108,6 +117,9 @@ const REVIEWER_ACCEPTANCE_UNCERTAINTY_PATTERN =
 
 const REVIEWER_PROSPECTIVE_ACCEPTANCE_PATTERN =
   /(?:我|我们)(?:目前|现在)?\s*(?:计划|打算|希望|期望|预计|准备|想要|将(?:会)?|会(?:在[^。！？!?；;\n]{0,16})?|以后会|之后会|届时会)[^。！？!?；;\n]{0,48}(?:接受|同意|确认|核实|撤回|收回|支持|赞成|不再阻塞|不阻塞|非阻塞)|\b(?:i|we)\s+(?:(?:plan|intend|hope|expect|aim|wish|want)\b|(?:am|are)\s+(?:planning|intending|hoping|expecting|aiming|wishing)\b|(?:will|shall)\s+(?!(?:not|never)\b)|(?:am|are)\s+going\s+to\b|would\s+like\s+to\b)[^.。！？!?；;\n]{0,64}\b(?:accept|agree|confirm|verify|withdraw|retract|support|endorse|non-?blocking|not\s+a\s+blocker)\b/i
+
+const OWNER_PRODUCT_DECISION_WITHDRAWAL_PATTERN =
+  /(?:(?:撤回|收回|取消|作废)[^。！？!?；;\n]{0,40}(?:产品取舍|产品决定|产品决策|延期|范围决定|单独处理)[^。！？!?；;\n]{0,32}(?:放行|批准|同意|授权)|(?:撤回|收回|取消|作废)[^。！？!?；;\n]{0,32}(?:放行|批准|同意|授权)[^。！？!?；;\n]{0,40}(?:产品取舍|产品决定|产品决策|延期|范围决定|单独处理)|不再(?:放行|批准|同意|授权)[^。！？!?；;\n]{0,40}(?:产品取舍|产品决定|产品决策|延期|范围决定|单独处理))|\b(?:(?:withdraw|retract|revoke|rescind|cancel)(?:s|ed|ing)?\b[^.。！？!?；;\n]{0,48}\b(?:approval|authorization|authorisation|sign-?off|go-?ahead)\b[^.。！？!?；;\n]{0,48}\b(?:deferral|product\s+(?:decision|trade-?off)|scope\s+decision|separate\s+(?:concern|handling))\b|(?:withdraw|retract|revoke|rescind|cancel)(?:s|ed|ing)?\b[^.。！？!?；;\n]{0,48}\b(?:deferral|product\s+(?:decision|trade-?off)|scope\s+decision|separate\s+(?:concern|handling))\b[^.。！？!?；;\n]{0,48}\b(?:approval|authorization|authorisation|sign-?off|go-?ahead)\b|no\s+longer\s+(?:approve|authorize|authorise|sign\s+off\s+on|give\s+the\s+go-?ahead\s+for)\b[^.。！？!?；;\n]{0,48}\b(?:deferral|product\s+(?:decision|trade-?off)|scope\s+decision|separate\s+(?:concern|handling))\b|\b(?:approval|authorization|authorisation|sign-?off|go-?ahead)\b[^.。！？!?；;\n]{0,48}\b(?:deferral|product\s+(?:decision|trade-?off)|scope\s+decision|separate\s+(?:concern|handling))\b[^.。！？!?；;\n]{0,24}\b(?:is|was|has\s+been|had\s+been)\s+(?:withdrawn|retracted|revoked|rescinded|cancelled|canceled)\b)/i
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
@@ -346,6 +358,8 @@ function reviewerAcceptanceKind(body) {
 function isExplicitReviewerRejection(body) {
   const value = String(body || '')
   return REVIEWER_REJECTION_PATTERN.test(value)
+    || (REVIEWER_SCOPED_NON_BLOCKING_REJECTION_PATTERN.test(value)
+      && !NEGATED_REVIEWER_SCOPED_NON_BLOCKING_REJECTION_PATTERN.test(value))
     || NEGATED_REVIEWER_FIXED_CONFIRMATION_PATTERN.test(value)
     || QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || PAST_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
@@ -456,6 +470,7 @@ function isProductDeferral(body) {
     || PRESENT_PROGRESSIVE_NO_CHANGE_PATTERN.test(value)
     || AUTHOR_EXPLICIT_REFUSAL_PATTERN.test(value)
     || AUTHOR_DECISION_NO_FIX_PATTERN.test(value)
+    || AUTHOR_INTENTION_NO_FIX_PATTERN.test(value)
     || AUTHOR_INABILITY_NO_FIX_PATTERN.test(value)
     || INTENDED_BEHAVIOR_DEFERRAL_PATTERN.test(value)
     || (NO_CHANGE_DEFERRAL_PATTERN.test(value)
@@ -693,21 +708,70 @@ function ownerDecisionEvidence({ authorLogin, headOid, after, reviews, comments 
   const author = String(authorLogin || '').toLowerCase()
   if (isMergeOwner(author)) return `owner-author:${author}`
 
-  const review = reviews.find((item) => (
-    isMergeOwner(item.login)
-      && String(item.state || '').toUpperCase() === 'APPROVED'
-      && sameHead(item.commit_id, headOid)
-      && eventTime(item.submitted_at) > after
-  ))
-  if (review) return `owner-review:${review.login}`
-
   const marker = ownerApprovalMarker(headOid)
-  const comment = comments.find((item) => (
-    isMergeOwner(item.login)
-      && String(item.body || '').toLowerCase().includes(marker)
-      && ownerMarkerTime(item, marker) > after
-  ))
-  return comment ? `owner-marker:${comment.login}` : null
+  const decisions = []
+
+  for (const [index, review] of reviews.entries()) {
+    if (!isMergeOwner(review.login) || !sameHead(review.commit_id, headOid)) continue
+    const state = String(review.state || '').toUpperCase()
+    if (state !== 'APPROVED' && state !== 'CHANGES_REQUESTED') continue
+    const at = eventTime(review.submitted_at)
+    if (at <= after) continue
+    decisions.push({
+      disposition: state === 'APPROVED' ? 'accept' : 'reject',
+      at,
+      source: 'owner-review',
+      index,
+      evidence: state === 'APPROVED' ? `owner-review:${review.login}` : null,
+    })
+  }
+
+  for (const [index, comment] of comments.entries()) {
+    if (!isMergeOwner(comment.login)) continue
+    const kind = ownerCommentDecisionKind(comment.body, marker, headOid)
+    if (!kind) continue
+    const at = kind === 'accept'
+      ? ownerMarkerTime(comment, marker)
+      : ownerWithdrawalTime(comment, marker, headOid)
+    if (at <= after) continue
+    decisions.push({
+      disposition: kind,
+      at,
+      source: 'owner-comment',
+      index,
+      semanticEdit: at > dispositionTime(comment),
+      evidence: kind === 'accept' ? `owner-marker:${comment.login}` : null,
+    })
+  }
+
+  if (decisions.length === 0 || latestDisposition(decisions) !== 'accept') return null
+  const latestAt = Math.max(...decisions.map((decision) => decision.at))
+  return decisions
+    .filter((decision) => decision.at === latestAt && decision.disposition === 'accept')
+    .sort((left, right) => left.index - right.index)
+    .at(-1)?.evidence || null
+}
+
+function ownerCommentDecisionKind(body, marker, headOid) {
+  const value = String(body || '')
+  if (isOwnerProductDecisionWithdrawal(value, headOid)) return 'reject'
+  return value.toLowerCase().includes(marker) ? 'accept' : null
+}
+
+function isOwnerProductDecisionWithdrawal(body, headOid) {
+  const value = String(body || '')
+  if (!OWNER_PRODUCT_DECISION_WITHDRAWAL_PATTERN.test(value)) return false
+  const referencedHeads = value.match(/\b[0-9a-f]{7,40}\b/gi) || []
+  if (referencedHeads.length === 0) return true
+  const currentHead = String(headOid || '').toLowerCase()
+  return referencedHeads.some((reference) => currentHead.startsWith(reference.toLowerCase()))
+}
+
+function ownerWithdrawalTime(comment, marker, headOid) {
+  const createdAt = dispositionTime(comment)
+  if (createdAt <= 0) return 0
+  const kind = (body) => ownerCommentDecisionKind(body, marker, headOid)
+  return hasSemanticDispositionEdit(comment, kind) ? commentTime(comment) : createdAt
 }
 
 function ownerMarkerTime(comment, marker) {

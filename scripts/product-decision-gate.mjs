@@ -19,6 +19,9 @@ const AUTHOR_EXPLICIT_REFUSAL_PATTERN =
 const AUTHOR_DECISION_NO_FIX_PATTERN =
   /\b(?:i|we)(?:\s+(?:have|had)|['’]ve)?\s+(?:decid(?:e|ed)|determin(?:e|ed)|cho(?:ose|se|sen)|opt(?:ed)?)\s+(?:not\s+to|against)\s+(?:(?:be\s+)?(?:fix(?:ing)?|address(?:ing)?|resolv(?:e|ing))\s+(?:(?:this|it)|the\s+(?:issue|finding|behavio(?:u)?r))|chang(?:e|ing)\s+(?:(?:this|it)|the\s+(?:behavio(?:u)?r|implementation))|(?:mak(?:e|ing)|implement(?:ing)?)\s+(?:(?:this|that|the\s+requested)\s+)?changes?)(?=$|[.。！？!?,，;；:\n]|\s+(?:(?:in\s+(?:this\s+)?(?:pr|pull\s+request))|here|now|before|after|until|because)\b)/i
 
+const AUTHOR_INABILITY_NO_FIX_PATTERN =
+  /(?:我|我们)?(?:目前|现在|当前)?\s*(?:无法|不能|没法)\s*(?:在(?:本|这个|该)\s*PR(?:中|里)?\s*)?(?:(?:修复|处理|解决|修改)\s*(?:这个|该|此)?\s*(?:问题|finding|行为|实现)|(?:作出|进行|实现)\s*(?:这个|该|此|所要求的|请求的)?\s*(?:修改|改动|变更))(?=$|[.。！？!?,，;；:\n]|\s+(?:在本\s*PR|这里|现在|目前|合并前|因为))|\b(?:(?:(?:i|we)\s+(?:(?:can(?:not|\s+not)|can['’]t|could\s+not|couldn['’]t)\s+|(?:am|are|was|were)\s+(?:(?:currently|still)\s+)?(?:unable|not\s+able)\s+to\s+|(?:have|had)\s+been\s+unable\s+to\s+)|(?:cannot|can['’]t)\s+)(?:(?:fix|address|resolve)\s+(?:(?:this|it)|(?:this|that|the)\s+(?:issue|finding|behavio(?:u)?r))|change\s+(?:(?:this|it)|(?:this|that|the)\s+(?:behavio(?:u)?r|implementation))|(?:make|implement)\s+(?:(?:this|that|the\s+requested)\s+)?changes?)|(?:(?:this|it)|(?:this|that|the)\s+(?:issue|finding|behavio(?:u)?r))\s+(?:can(?:not|\s+not)|can['’]t|could\s+not|couldn['’]t)\s+be\s+(?:fixed|addressed|resolved|changed)|(?:this|that|the\s+requested)\s+changes?\s+(?:can(?:not|\s+not)|can['’]t|could\s+not|couldn['’]t)\s+be\s+(?:made|implemented))(?=$|[.。！？!?,，;；:\n]|\s+(?:(?:in\s+(?:this\s+)?(?:pr|pull\s+request))|here|now|yet|before|after|until|because)\b)/i
+
 const NEGATED_PRODUCT_DEFERRAL_PATTERN =
   /(?:不是|并非|并不是)\s*(?:产品(?:决定|决策|取舍)|不改|不修|暂不处理|超出(?:本\s*PR\s*)?范围)|\b(?:is\s+not|isn't|was\s+not|wasn't|not)\s+(?:a\s+)?(?:product\s+(?:decision|trade-?off)|by\s+design|expected\s+behavio(?:u)?r|out\s+of\s+scope|defer(?:red)?)\b|\b(?:do\s+not|don't|should\s+not|shouldn't|cannot|can't|won't|not)\s+keep(?:\s+(?:this|it))?\s+as[-\s]+is\b/gi
 
@@ -446,6 +449,7 @@ function isProductDeferral(body) {
     || PRESENT_PROGRESSIVE_NO_CHANGE_PATTERN.test(value)
     || AUTHOR_EXPLICIT_REFUSAL_PATTERN.test(value)
     || AUTHOR_DECISION_NO_FIX_PATTERN.test(value)
+    || AUTHOR_INABILITY_NO_FIX_PATTERN.test(value)
     || INTENDED_BEHAVIOR_DEFERRAL_PATTERN.test(value)
     || (NO_CHANGE_DEFERRAL_PATTERN.test(value)
       && !NON_BEHAVIOR_NO_CHANGE_PATTERN.test(value))

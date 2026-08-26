@@ -2858,6 +2858,18 @@ test('not going to fix 或 address 是明确产品取舍延期', () => {
     'We determined not to implement the requested change.',
     'I chose not to make this change.',
     "We've opted not to address the issue.",
+    "We can't fix this.",
+    'We cannot address this in this PR.',
+    'We are unable to make the requested change.',
+    'I am not able to resolve the issue here.',
+    'We were unable to change this behavior.',
+    'We have been unable to implement this change.',
+    'This cannot be fixed in this PR.',
+    "The requested change can't be implemented here.",
+    'WE CAN’T ADDRESS THIS FINDING.',
+    '我们无法修复这个问题。',
+    '不能在本 PR 处理该 finding。',
+    '我们没法作出所要求的修改。',
     'This will not be fixed in this PR.',
     "We won't change this.",
     'I will not change it.',
@@ -2923,11 +2935,72 @@ test('积极进行中的当前修复不是 no-fix disposition', () => {
     "We've decided not to address the documentation; fixed the behavior.",
     'We decided not to fix this in tests; fixed the implementation.',
     'We have decided not to address this in documentation; fixed the behavior.',
+    "We can't fix this test; fixed the implementation.",
+    'We cannot address this documentation; fixed the behavior.',
+    'We are unable to change this fixture; fixed the implementation.',
+    'This test cannot be fixed; fixed the implementation.',
+    '我们无法修改这个测试，已经修复实现。',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,
       authorLogin: 'author',
       threads: [thread({ authorReply })],
     }).satisfied, true, authorReply)
+  }
+})
+
+test('无法修复 disposition 的编辑历史继续要求 fresh reviewer 或 current-head owner 放行', () => {
+  const editShapes = [
+    {
+      edits_complete: true,
+      edits: [{ diff: 'We cannot address this in this PR.' }],
+    },
+    {
+      edits_complete: true,
+      edits: [{ diff: '@@ -1 +1 @@\n-We are unable to make the requested change.\n+Fixed and covered by regression tests.' }],
+    },
+    {
+      edits_complete: false,
+      edits: [{ diff: '+Fixed and covered by regression tests.' }],
+    },
+  ]
+
+  for (const edit of editShapes) {
+    const candidate = thread({
+      authorReply: 'Fixed and covered by regression tests.',
+      reviewerReply: null,
+    })
+    candidate.comments[1] = {
+      ...candidate.comments[1],
+      updated_at: '2026-08-25T03:03:00Z',
+      ...edit,
+    }
+
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, false, JSON.stringify(edit))
+
+    candidate.comments.push({
+      login: 'codex', body: 'Confirmed fixed and resolved.',
+      created_at: '2026-08-25T03:04:00Z',
+    })
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, true, JSON.stringify(edit))
+
+    candidate.comments.pop()
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+      comments: [{
+        login: 'jerboy', body: ownerApprovalMarker(head),
+        created_at: '2026-08-25T03:04:00Z',
+      }],
+    }).satisfied, true, JSON.stringify(edit))
   }
 })

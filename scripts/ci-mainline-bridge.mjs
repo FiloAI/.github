@@ -49,9 +49,9 @@ export function formatCiBridgeEvent(event) {
  * 将 PR 总管发现的当前 head CI 事实并入合并管家的 PR 状态回复。
  * bridge 只补充上下文，是否阻塞仍由 live GitHub 门禁决定；head 不一致时丢弃旧事件。
  */
-export function appendCiBridgeReason(reason, event, head) {
+export function appendCiBridgeReason(reason, event, head, { liveCiFailed = false } = {}) {
   const base = String(reason || '').trim()
-  if (!event || event.status !== 'failed' || !event.head || (head && event.head !== head)) return base
+  if (!liveCiFailed || !event || event.status !== 'failed' || !event.head || (head && event.head !== head)) return base
   const checks = (event.checks || [])
     .filter((check) => /FAILURE|ERROR|TIMED_OUT|CANCELLED|STARTUP_FAILURE/i.test(
       String(check.conclusion ?? check.status ?? check.state ?? ''),

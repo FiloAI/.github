@@ -9,6 +9,10 @@ function clean(value) {
 
 export const MERGE_STATUS_MARKER = '<!-- filoai-merge-steward:status -->'
 
+export function shouldPublishMergeStatus(publishStatus) {
+  return publishStatus === true
+}
+
 function splitReasons(reason) {
   return String(reason || '')
     .split(/\s*[；;]\s*/)

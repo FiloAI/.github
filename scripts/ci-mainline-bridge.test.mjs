@@ -65,11 +65,15 @@ test('当前 head 的 CI bridge 失败会补进 PR 阻塞原因，旧 head 不�
     checks: [{ name: 'PR · Dispatcher', conclusion: 'failure' }],
   }
   assert.match(
-    appendCiBridgeReason('required checks 未通过: summary=failure', event, event.head),
+    appendCiBridgeReason('required checks 未通过: summary=failure', event, event.head, { liveCiFailed: true }),
     /PR · Dispatcher=failure.*head=aaaaaaaaaaaa/,
   )
   assert.equal(
-    appendCiBridgeReason('required checks 未通过: summary=failure', event, 'b'.repeat(40)),
+    appendCiBridgeReason('unresolved review thread', event, event.head),
+    'unresolved review thread',
+  )
+  assert.equal(
+    appendCiBridgeReason('required checks 未通过: summary=failure', event, 'b'.repeat(40), { liveCiFailed: true }),
     'required checks 未通过: summary=failure',
   )
 })

@@ -6,7 +6,13 @@ import {
   buildMergeStatusCommentArgs,
   humanizeMergeReason,
   MERGE_STATUS_MARKER,
+  shouldPublishMergeStatus,
 } from './merge-status-comment.mjs'
+
+test('状态评论只有显式开启 publish-status 才允许写入', () => {
+  assert.equal(shouldPublishMergeStatus(false), false)
+  assert.equal(shouldPublishMergeStatus(true), true)
+})
 
 test('阻塞状态绑定当前 head 并直接展示原因', () => {
   const body = buildMergeStatusComment({

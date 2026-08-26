@@ -46,6 +46,7 @@ import {
   buildMergeStatusComment,
   buildMergeStatusCommentArgs,
   MERGE_STATUS_MARKER,
+  shouldPublishMergeStatus,
 } from './merge-status-comment.mjs'
 import {
   buildMergeArgs,
@@ -518,15 +519,16 @@ for (const repo of REPOS) {
   for (const listedPr of prs) {
     let pr = listedPr
     const tag = `[${repo}#${listedPr.number}]`
-    const skip = (why) => {
+    const skip = (why, { liveCiFailed = false } = {}) => {
       totalSkipped++
       const publishedWhy = appendCiBridgeReason(
         why,
         ciBridgeByPr.get(`${repo}#${pr.number}`),
         pr.headRefOid,
+        { liveCiFailed },
       )
       console.log(`${tag} SKIP: ${publishedWhy} — ${pr.title || listedPr.title}`)
-      if (PUBLISH_STATUS) {
+      if (shouldPublishMergeStatus(PUBLISH_STATUS)) {
         try {
           const changed = replyMergeStatus(repo, pr, publishedWhy)
           console.log(`${tag} STATUS ${changed ? 'PUBLISHED' : 'UNCHANGED'}`)
@@ -550,6 +552,7 @@ for (const repo of REPOS) {
     }
     const candidate = evaluateCandidate(repo, pr)
     if (!candidate.satisfied) {
+      const liveCiFailed = /^required checks 未通过:/i.test(candidate.requiredGate?.reason || '')
       if (candidate.needsOwnerReview && PUBLISH_STATUS) {
         try {
           requestHighRiskReview(repo, pr, candidate.reason)
@@ -561,7 +564,7 @@ for (const repo of REPOS) {
       if (candidate.readyForReview && DRY_RUN) {
         totalSkipped++
         console.log(`${tag} READY FOR REVIEW head=${pr.headRefOid} — ${pr.title}`)
-        if (PUBLISH_STATUS) {
+        if (shouldPublishMergeStatus(PUBLISH_STATUS)) {
           try {
             const changed = replyMergeStatus(repo, pr, candidate.reason, { state: 'ready' })
             console.log(`${tag} STATUS ${changed ? 'PUBLISHED' : 'UNCHANGED'}`)
@@ -571,7 +574,7 @@ for (const repo of REPOS) {
         }
         continue
       }
-      skip(candidate.reason)
+      skip(candidate.reason, { liveCiFailed })
       continue
     }
     const { isBot } = candidate
@@ -623,16 +626,18 @@ for (const repo of REPOS) {
         throw new Error(`合并命令返回但 live state=${mergedPr.state} queue=${Boolean(mergedPr.isInMergeQueue)}`)
       }
       console.log(`${tag} MERGED (${method}) commit=${mergedPr.mergeCommit?.oid || 'unknown'} — ${pr.title}`)
-      try {
-        const changed = replyMergeStatus(
-          repo,
-          pr,
-          `GitHub 已确认 state=MERGED，merge commit=${mergedPr.mergeCommit?.oid || 'unknown'}`,
-          { state: 'merged' },
-        )
-        console.log(`${tag} STATUS ${changed ? 'CLOSED' : 'UNCHANGED'}`)
-      } catch (statusError) {
-        console.log(`${tag} STATUS CLOSE FAILED: ${String(statusError.message || statusError).slice(0, 200)}`)
+      if (shouldPublishMergeStatus(PUBLISH_STATUS)) {
+        try {
+          const changed = replyMergeStatus(
+            repo,
+            pr,
+            `GitHub 已确认 state=MERGED，merge commit=${mergedPr.mergeCommit?.oid || 'unknown'}`,
+            { state: 'merged' },
+          )
+          console.log(`${tag} STATUS ${changed ? 'CLOSED' : 'UNCHANGED'}`)
+        } catch (statusError) {
+          console.log(`${tag} STATUS CLOSE FAILED: ${String(statusError.message || statusError).slice(0, 200)}`)
+        }
       }
       totalMerged++
     } catch (e) {

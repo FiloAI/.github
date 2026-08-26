@@ -31,7 +31,10 @@ test('作者 defer 后必须由原 reviewer accept-deferral 或 owner 当前 hea
   const blocked = evaluateProductDecisionGate({
     headOid: head,
     authorLogin: 'alice',
-    events: [event('review-bot', finding), event('alice', defer)],
+    events: [
+      event('review-bot', finding, '2026-08-26T00:00:00Z'),
+      event('alice', defer, '2026-08-26T00:01:00Z'),
+    ],
   })
   assert.equal(blocked.satisfied, false)
   assert.match(blocked.reason, /原 reviewer review-bot.*accept-deferral.*owner.*approve/)
@@ -39,7 +42,11 @@ test('作者 defer 后必须由原 reviewer accept-deferral 或 owner 当前 hea
   const accepted = evaluateProductDecisionGate({
     headOid: head,
     authorLogin: 'alice',
-    events: [event('review-bot', finding), event('alice', defer), event('review-bot', accept)],
+    events: [
+      event('review-bot', finding, '2026-08-26T00:00:00Z'),
+      event('alice', defer, '2026-08-26T00:01:00Z'),
+      event('review-bot', accept, '2026-08-26T00:02:00Z'),
+    ],
   })
   assert.equal(accepted.satisfied, true)
   assert.deepEqual(accepted.evidence, ['finding:auth-timeout:accept-deferral:review-bot'])
@@ -50,9 +57,9 @@ test('owner approve 必须是当前完整 head，旧 head fail-closed', () => {
     headOid: head,
     authorLogin: 'alice',
     events: [
-      event('review-bot', finding),
-      event('alice', defer),
-      event('zqchris', productDispositionMarker({ finding: 'auth-timeout', action: 'approve', head: oldHead })),
+      event('review-bot', finding, '2026-08-26T00:00:00Z'),
+      event('alice', defer, '2026-08-26T00:01:00Z'),
+      event('zqchris', productDispositionMarker({ finding: 'auth-timeout', action: 'approve', head: oldHead }), '2026-08-26T00:02:00Z'),
     ],
   })
   assert.equal(stale.satisfied, false)
@@ -62,9 +69,9 @@ test('owner approve 必须是当前完整 head，旧 head fail-closed', () => {
     headOid: head,
     authorLogin: 'alice',
     events: [
-      event('review-bot', finding),
-      event('alice', defer),
-      event('GaoWeiLiuXD', productDispositionMarker({ finding: 'auth-timeout', action: 'approve', head })),
+      event('review-bot', finding, '2026-08-26T00:00:00Z'),
+      event('alice', defer, '2026-08-26T00:01:00Z'),
+      event('GaoWeiLiuXD', productDispositionMarker({ finding: 'auth-timeout', action: 'approve', head }), '2026-08-26T00:02:00Z'),
     ],
   })
   assert.equal(current.satisfied, true)
@@ -123,11 +130,44 @@ test('malformed marker、未知 finding、越权 actor 一律 fail-closed', () =
   assert.match(wrongActor.reason, /只能由 PR 作者/)
 })
 
-test('编辑时间不改变事件顺序；只按 created_at 计时', () => {
-  const markers = parseProductDecisionMarkers([
-    { login: 'alice', body: defer, created_at: '2026-08-26T00:00:00Z', updated_at: '2026-08-27T00:00:00Z' },
-  ])
-  assert.equal(markers[0].created_at, '2026-08-26T00:00:00Z')
-  assert.equal(markers[0].event.updated_at, undefined)
+test('作者不能自己创建 finding 后自己接受延期', () => {
+  const result = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'alice',
+    events: [event('alice', finding), event('alice', defer), event('alice', accept, '2026-08-26T00:01:00Z')],
+  })
+  assert.equal(result.satisfied, false)
+  assert.match(result.reason, /非作者 reviewer\/bot/)
 })
 
+test('编辑旧评论不能插入 marker 倒签授权事件', () => {
+  const result = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'alice',
+    events: [
+      event('review-bot', finding),
+      {
+        login: 'alice',
+        body: defer,
+        created_at: '2026-08-26T00:00:00Z',
+        updated_at: '2026-08-27T00:00:00Z',
+      },
+    ],
+  })
+  assert.equal(result.satisfied, false)
+  assert.match(result.reason, /评论已编辑/)
+})
+
+test('同秒 disposition 不建立跨来源顺序，要求重发最后动作', () => {
+  const result = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'alice',
+    events: [
+      event('review-bot', finding),
+      event('alice', defer, '2026-08-26T00:00:00Z'),
+      event('review-bot', accept, '2026-08-26T00:00:00Z'),
+    ],
+  })
+  assert.equal(result.satisfied, false)
+  assert.match(result.reason, /同秒 disposition/)
+})

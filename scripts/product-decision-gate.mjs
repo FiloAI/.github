@@ -20,6 +20,11 @@ function eventTime(event) {
   return Number.isFinite(value) ? value : 0
 }
 
+function isEditedEvent(event) {
+  if (!event?.created_at || !event?.updated_at) return false
+  return eventTime({ created_at: event.updated_at }) > eventTime(event)
+}
+
 function parseAttributes(raw, required, optional = []) {
   const attrs = {}
   const allowed = new Set([...required, ...optional])
@@ -103,6 +108,7 @@ export function parseProductDecisionMarkers(events = []) {
       login: rawEvent?.login || rawEvent?.user?.login || '',
       body: String(rawEvent?.body || ''),
       created_at: rawEvent?.created_at || rawEvent?.submitted_at || null,
+      updated_at: rawEvent?.updated_at || null,
       source: rawEvent?.source || 'comment',
       id: rawEvent?.id ?? null,
       commit_id: rawEvent?.commit_id || null,
@@ -111,6 +117,15 @@ export function parseProductDecisionMarkers(events = []) {
     const relevant = tokens.filter((token) => MARKER_HINT_PATTERN.test(token))
     if (MARKER_HINT_PATTERN.test(event.body) && relevant.length === 0) {
       markers.push({ valid: false, type: 'unknown', error: 'marker 未闭合或格式无法解析', event })
+      continue
+    }
+    if (relevant.length > 0 && isEditedEvent(event)) {
+      markers.push({
+        valid: false,
+        type: 'unknown',
+        error: '包含 marker 的评论已编辑；请新建评论发布 marker，不能用编辑旧评论制造授权事件',
+        event,
+      })
       continue
     }
     for (const token of relevant) markers.push(parseMarkerToken(token, event))
@@ -167,6 +182,9 @@ export function evaluateProductDecisionGate({
   const relevantFindings = [...findings.values()].filter((finding) => ['P0', 'P1'].includes(finding.severity))
   const evidence = []
   for (const finding of relevantFindings) {
+    if (!finding.actor || finding.actor === author) {
+      return blocked(`finding=${finding.id} 必须由非作者 reviewer/bot 创建，PR 作者不能给自己创建授权 finding`, { markers })
+    }
     const history = dispositions
       .filter((item) => item.findingId === finding.id)
       .sort((left, right) => eventTime(left) - eventTime(right))
@@ -174,6 +192,11 @@ export function evaluateProductDecisionGate({
 
     let deferred = false
     let authorized = null
+    for (let index = 1; index < history.length; index++) {
+      if (eventTime(history[index - 1]) === eventTime(history[index])) {
+        return blocked(`finding=${finding.id} 有多个同秒 disposition，无法证明事件先后；请用新评论重发最后动作`, { markers })
+      }
+    }
     for (const item of history) {
       if (item.action === 'defer') {
         if (item.actor !== author) {
@@ -230,4 +253,3 @@ export function productDispositionMarker({ finding, action, head }) {
   const suffix = head === undefined ? '' : ` head=${head}`
   return `<!-- filoai:product-disposition finding=${finding} action=${action}${suffix} -->`
 }
-

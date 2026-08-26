@@ -11,7 +11,23 @@ node scripts/pr-merge-sweep.mjs --dry-run --repo FiloAI/filoai-frontend   # 只�
 node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 --expected-head <40位本机AI已审SHA> # 定点合并
 ```
 
-门禁（全过才合并）：非 draft + base 在仓库允许列表 + 无 `no-automerge` + `mergeable=MERGEABLE` + 当前 base ruleset 声明的全部 required checks 绿 + 0 未解决 review thread + **当前 head 至少有一次可审计的非作者人工或 owner-side AI 审核答复**。CI 绿本身不能合并；Cursor、Greptile、Codex 等任何具体 provider 都不是必需依赖。没有 required checks 的仓库不虚构 `summary`。`needs-human-review` 标签、外部机器人的风险评级、`未批准` 或 `转人工` 本身都不是门禁；只有具备权限的真人明确阻止才需要真人针对当前 head 放行。
+门禁（全过才合并）：非 draft + base 在仓库允许列表 + 无 `no-automerge` + `mergeable=MERGEABLE` + 当前 base ruleset 声明的全部 required checks 绿 + 0 未解决 review thread + **当前 head 至少有一次可审计的非作者人工或 owner-side AI 审核答复** + **结构化产品取舍门通过**。CI 绿本身不能合并；Cursor、Greptile、Codex 等任何具体 provider 都不是必需依赖。没有 required checks 的仓库不虚构 `summary`。`needs-human-review` 标签、外部机器人的风险评级、`未批准` 或 `转人工` 本身都不是门禁；只有具备权限的真人明确阻止才需要真人针对当前 head 放行。
+
+### 产品取舍门：只认结构化 marker
+
+产品取舍门只处理明确声明为 P0/P1 的结构化 finding。它不再猜测中英文自然语言，不恢复评论编辑历史，不做编辑距离或跨来源同秒排序。推荐协议如下（marker 中的 actor 由 GitHub 评论作者决定）：
+
+```html
+<!-- filoai:finding id=<stable-id> severity=P1 kind=behavior -->
+<!-- filoai:product-disposition finding=<stable-id> action=defer -->
+<!-- filoai:product-disposition finding=<stable-id> action=accept-deferral -->
+<!-- filoai:product-disposition finding=<stable-id> action=approve head=<40位当前head SHA> -->
+<!-- filoai:product-disposition finding=<stable-id> action=withdraw head=<40位当前head SHA> -->
+```
+
+`finding` 只能来自正式 review 或 inline review comment，不能由普通 issue comment 创建；`defer` 只能由 PR 作者发布；`accept-deferral` 只能由创建该 finding 的原 reviewer 发布；`approve` 只能由 FiloAI owner（`zqchris`、`jerboy`、`GaoWeiLiuXD`）发布，且必须绑定当前完整 head SHA。`withdraw` 由原 reviewer 或 owner 发布，也必须绑定当前 head，并会使之前的授权失效。事件只按评论 `created_at` 处理，编辑后的内容不会制造新的授权事件。
+
+没有 defer 的 finding 不会触发产品取舍门；非 owner 作者有 defer 但缺少对应 acceptance/approval、marker 格式错误、finding 不匹配、actor 越权或 head 过期，一律 fail-closed。owner 作者的显式 defer 视为自身产品决定，但 withdraw 后仍须重新 defer 或获得新的授权。自由文本只能触发人工提醒，不能构成放行证据。
 
 不属于脚本门禁：Greptile、GitHub Codex、Cursor Bugbot、Cursor Approval Agent 或 Cursor Security Agent 的到场、缺席、超时、失败、拒审、风险评级、`未批准` 或 `转人工`，以及 Confidence、PR 大小、commit 数、作者身份分级、feat/fix 类型、视觉或产品方向分类。定时任务在调用定点合并前必须完整审查当前 head；外部 reviewer 已给出的具体可行动意见／安全 finding 与管家自审发现都必须写成 inline review thread 并闭环。机器人没有给出具体缺陷或覆盖不足时走管家代码／安全代审，不能让已满足硬门禁的 PR 永久等待。
 

@@ -95,7 +95,7 @@ const REVIEWER_SEPARATE_HANDLING_NON_ACCEPTANCE_PATTERN =
   /\b(?:(?:(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:not\s+(?:comfortable|sure|certain)|uncomfortable|uneasy|hesitant|reluctant)|(?:i|we)\s+(?:would|could|may|might)\s+not\s+be\s+comfortable)\s+(?:(?:with|about|to)\s+)?(?:treat(?:ing)?|handl(?:e|ing)|regard(?:ing)?|view(?:ing)?)[^.。！？!?；;\n]{0,48}\b(?:as\s+(?:a\s+)?separate\s+(?:concern|issue|pr)|separately)|(?:(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:only\s+)?comfortable|(?:i|we)\s+(?:(?:would|could|can|may|might)\s+)?(?:only\s+)?be\s+comfortable)\s+(?:(?:with|about)\s+)?(?:treating|handling|regarding|viewing)[^.。！？!?；;\n]{0,48}\b(?:as\s+(?:a\s+)?separate\s+(?:concern|issue|pr)|separately)[^.。！？!?；;\n]{0,48}\b(?:only\s+if|if\s+(?!(?:useful|helpful|needed|desired|necessary)\b)|unless|provided(?:\s+that)?|as\s+long\s+as|once|after|when|subject\s+to|pending)\b)/i
 
 const REVIEWER_SEPARATE_HANDLING_SUPPORT_REJECTION_PATTERN =
-  /(?:不支持|无法支持|不能支持|不再支持)[^。！？!?；;\n]{0,64}(?:单独处理|独立(?:问题|事项|处理))|支持[^。！？!?；;\n]{0,48}(?:不|不要|无需|不应)(?:再)?[^。！？!?；;\n]{0,32}(?:单独处理|作为独立(?:问题|事项)处理)|\b(?:i|we)\s+(?:(?:(?:do\s+not|don['’]t|cannot|can['’]t|will\s+not|won['’]t)\s+(?:(?:currently|fully|yet)\s+)?(?:continue\s+to\s+)?support)|(?:no\s+longer\s+support)|(?:(?:am|are)\s+(?:not\s+(?:willing|able|ready)|unable|unwilling)\s+to\s+support))[^.。！？!?；;\n]{0,64}\b(?:treat(?:ing)?|handl(?:e|ing)|regard(?:ing)?|view(?:ing)?)[^.。！？!?；;\n]{0,48}\b(?:as\s+(?:a\s+)?separate\s+(?:concern|issue|pr)|separately)\b|\b(?:i|we)\s+(?:support|endorse)[^.。！？!?；;\n]{0,48}\b(?:not\s+to|not|against)\s+(?:treat|handle|regard|view)(?:ing)?[^.。！？!?；;\n]{0,48}\b(?:as\s+(?:a\s+)?separate\s+(?:concern|issue|pr)|separately)\b/i
+  /(?:不支持|无法支持|不能支持|不再支持|不批准|无法批准|不能批准|不再批准|不认可|不再认可)[^。！？!?；;\n]{0,64}(?:单独处理|独立(?:问题|事项|处理))|(?:支持|赞成|批准|认可)[^。！？!?；;\n]{0,48}(?:不|不要|无需|不应)(?:再)?[^。！？!?；;\n]{0,32}(?:单独处理|作为独立(?:问题|事项)处理)|\b(?:i|we)\s+(?:(?:(?:do\s+not|don['’]t|cannot|can['’]t|will\s+not|won['’]t)\s+(?:(?:currently|fully|yet)\s+)?(?:continue\s+to\s+)?(?:support|approve|endorse))|(?:no\s+longer\s+(?:support|approve|endorse))|(?:(?:am|are)\s+(?:not\s+(?:willing|able|ready)|unable|unwilling)\s+to\s+(?:support|approve|endorse)))[^.。！？!?；;\n]{0,64}\b(?:treat(?:ing)?|handl(?:e|ing)|regard(?:ing)?|view(?:ing)?)[^.。！？!?；;\n]{0,48}\b(?:as\s+(?:a\s+)?separate\s+(?:concern|issue|pr)|separately)\b|\b(?:i|we)\s+(?:support|endorse|approve)[^.。！？!?；;\n]{0,48}\b(?:not\s+to|not|against)\s+(?:treat(?:ing)?|handl(?:e|ing)|regard(?:ing)?|view(?:ing)?)[^.。！？!?；;\n]{0,48}\b(?:as\s+(?:a\s+)?separate\s+(?:concern|issue|pr)|separately)\b/i
 
 const REVIEWER_SEPARATE_HANDLING_ACCEPTANCE_PATTERN =
   /(?:不反对|支持|赞成)[^。！？!?；;\n]{0,64}(?:单独处理|独立(?:问题|事项|处理))|(?:这|此)(?:是|属于)(?:一个)?独立(?:问题|事项)|\b(?:(?:i|we)\s+(?:support|endorse)[^.。！？!?；;\n]{0,64}|(?:(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:comfortable|willing|ready|prepared|not\s+uncomfortable)|(?:i|we)\s+(?:would|could|can|may|might)\s+be\s+comfortable)\s+(?:(?:with|about|to)\s+)?(?:treat(?:ing)?|handl(?:e|ing)|regard(?:ing)?|view(?:ing)?)[^.。！？!?；;\n]{0,48}|(?:i|we)\s+(?:(?:(?:do\s+not|don['’]t|cannot|can['’]t)\s+(?:object|oppose|disagree))|(?:(?:am|are)\s+not\s+(?:against|opposed))|(?:have\s+no\s+opposition))[^.。！？!?；;\n]{0,64})\b(?:as\s+(?:a\s+)?separate\s+(?:concern|issue|pr)|(?:treat(?:ing)?|handl(?:e|ing)|regard(?:ing)?|view(?:ing)?)[^.。！？!?；;\n]{0,32}\b(?:as\s+(?:a\s+)?separate\s+(?:concern|issue|pr)|separately)|separately)\b|\b(?:this|that|it)\s+(?:is|['’]s)\s+(?:a\s+)?separate\s+(?:concern|issue)\b/i
@@ -120,6 +120,18 @@ const REVIEWER_PROSPECTIVE_ACCEPTANCE_PATTERN =
 
 const OWNER_PRODUCT_DECISION_WITHDRAWAL_PATTERN =
   /(?:(?:撤回|收回|取消|作废)[^。！？!?；;\n]{0,40}(?:产品取舍|产品决定|产品决策|延期|范围决定|单独处理)[^。！？!?；;\n]{0,32}(?:放行|批准|同意|授权)|(?:撤回|收回|取消|作废)[^。！？!?；;\n]{0,32}(?:放行|批准|同意|授权)[^。！？!?；;\n]{0,40}(?:产品取舍|产品决定|产品决策|延期|范围决定|单独处理)|不再(?:放行|批准|同意|授权)[^。！？!?；;\n]{0,40}(?:产品取舍|产品决定|产品决策|延期|范围决定|单独处理))|\b(?:(?:withdraw|retract|revoke|rescind|cancel)(?:s|ed|ing)?\b[^.。！？!?；;\n]{0,48}\b(?:approval|authorization|authorisation|sign-?off|go-?ahead)\b[^.。！？!?；;\n]{0,48}\b(?:deferral|product\s+(?:decision|trade-?off)|scope\s+decision|separate\s+(?:concern|handling))\b|(?:withdraw|retract|revoke|rescind|cancel)(?:s|ed|ing)?\b[^.。！？!?；;\n]{0,48}\b(?:deferral|product\s+(?:decision|trade-?off)|scope\s+decision|separate\s+(?:concern|handling))\b[^.。！？!?；;\n]{0,48}\b(?:approval|authorization|authorisation|sign-?off|go-?ahead)\b|no\s+longer\s+(?:approve|authorize|authorise|sign\s+off\s+on|give\s+the\s+go-?ahead\s+for)\b[^.。！？!?；;\n]{0,48}\b(?:deferral|product\s+(?:decision|trade-?off)|scope\s+decision|separate\s+(?:concern|handling))\b|\b(?:approval|authorization|authorisation|sign-?off|go-?ahead)\b[^.。！？!?；;\n]{0,48}\b(?:deferral|product\s+(?:decision|trade-?off)|scope\s+decision|separate\s+(?:concern|handling))\b[^.。！？!?；;\n]{0,24}\b(?:is|was|has\s+been|had\s+been)\s+(?:withdrawn|retracted|revoked|rescinded|cancelled|canceled)\b)/i
+
+const OWNER_GENERIC_APPROVAL_WITHDRAWAL_PATTERN =
+  /(?:我|我们)?(?:已|已经|现在)?\s*(?:撤回|收回|取消|作废)\s*(?:了\s*)?(?:(?:我|我们)的|该|这个)?\s*(?:放行|批准|同意|授权)|(?:(?:我|我们)的|该|这个)?\s*(?:放行|批准|同意|授权)\s*(?:已|已经)?(?:被)?\s*(?:撤回|收回|取消|作废)|\b(?:(?:i|we)\s+(?:(?:have|['’]ve)\s+)?(?:withdraw|withdrew|withdrawn|retract(?:ed)?|revoke(?:d)?|rescind(?:ed)?|cancel(?:led|ed)?)\s+(?:my|our)\s+(?:approval|authorization|authorisation|sign-?off|go-?ahead)|(?:my|our)\s+(?:approval|authorization|authorisation|sign-?off|go-?ahead)\s+(?:is|was|has\s+been|had\s+been)\s+(?:withdrawn|retracted|revoked|rescinded|cancelled|canceled))\b/i
+
+const OWNER_LATE_APPROVAL_WITHDRAWAL_PATTERN =
+  /(?:(?:(?:我|我们)的|该|这个)?\s*(?:放行|批准|同意|授权)[^。！？!?；;\n]{0,24}(?:现在|如今|今天|目前|现已)(?:已|已经)?(?:被)?\s*(?:撤回|收回|取消|作废)|\b(?:my|our)\s+(?:approval|authorization|authorisation|sign-?off|go-?ahead)\b[^.。！？!?；;\n]{0,48}\b(?:now|today|currently)\s+(?:(?:(?:has|had)\s+been|is|was)\s+)?(?:withdrawn|retracted|revoked|rescinded|cancelled|canceled)\b)/i
+
+const NEGATED_OWNER_APPROVAL_WITHDRAWAL_PATTERN =
+  /(?:我|我们)(?:并|也)?(?:不|没有|没|不会|不能|无法|拒绝|不愿意?)\s*(?:撤回|收回|取消|作废)[^。！？!?；;\n]{0,24}(?:放行|批准|同意|授权)|(?:(?:我|我们)的|该|这个)?\s*(?:放行|批准|同意|授权)[^。！？!?；;\n]{0,16}(?:未|没有|没|并未|不会)(?:被)?\s*(?:撤回|收回|取消|作废)|\b(?:(?:i|we)\s+(?:(?:(?:do|did|will|would)\s+not|don['’]t|didn['’]t|won['’]t|wouldn['’]t|cannot|can['’]t)\s+(?:withdraw|retract|revoke|rescind|cancel)|(?:refuse|decline)\s+to\s+(?:withdraw|retract|revoke|rescind|cancel)|(?:have|has|had)\s+not\s+(?:withdrawn|retracted|revoked|rescinded|cancelled|canceled)|(?:haven['’]t|hasn['’]t|hadn['’]t)\s+(?:withdrawn|retracted|revoked|rescinded|cancelled|canceled))\b[^.。！？!?；;\n]{0,32}\b(?:my|our)\s+(?:approval|authorization|authorisation|sign-?off|go-?ahead)\b|(?:my|our)\s+(?:approval|authorization|authorisation|sign-?off|go-?ahead)\s+(?:(?:is|was)\s+not\s+(?:withdrawn|retracted|revoked|rescinded|cancelled|canceled)|(?:has|had)\s+not\s+been\s+(?:withdrawn|retracted|revoked|rescinded|cancelled|canceled)|(?:hasn['’]t|hadn['’]t)\s+been\s+(?:withdrawn|retracted|revoked|rescinded|cancelled|canceled)))\b/i
+
+const PENDING_OWNER_APPROVAL_WITHDRAWAL_PATTERN =
+  /(?:如果|若|只要|除非|等到|待|当|一旦)[^。！？!?；;\n]{0,48}(?:我|我们)?[^。！？!?；;\n]{0,24}(?:撤回|收回|取消|作废)[^。！？!?；;\n]{0,24}(?:放行|批准|同意|授权)|(?:我|我们)(?:将(?:会)?|会|可能|也许|计划|打算|准备|希望|考虑)[^。！？!?；;\n]{0,32}(?:撤回|收回|取消|作废)[^。！？!?；;\n]{0,24}(?:放行|批准|同意|授权)|\b(?:(?:if|unless|when|once|after|before|subject\s+to|pending)\b[^.。！？!?；;\n]{0,64}\b(?:i|we)\s+(?:will\s+|would\s+|may\s+|might\s+|could\s+)?(?:withdraw|retract|revoke|rescind|cancel)\b[^.。！？!?；;\n]{0,32}\b(?:my|our)\s+(?:approval|authorization|authorisation|sign-?off|go-?ahead)\b|(?:i|we)\s+(?:(?:will|would|may|might|could)\s+(?!not\b)|(?:plan|intend|hope|expect)\s+to\s+|(?:am|are)\s+going\s+to\s+)(?:withdraw|retract|revoke|rescind|cancel)\b[^.。！？!?；;\n]{0,32}\b(?:my|our)\s+(?:approval|authorization|authorisation|sign-?off|go-?ahead)\b)/i
 
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
@@ -301,6 +313,19 @@ function reviewerDispositionParts(body) {
     .filter(Boolean)
 }
 
+function dispositionScopeParts(body) {
+  return String(body || '')
+    .split(/(?<=[。！？!?；;])|\n+|(?<=\.)\s+|\s+(?=(?:and|but|however|yet)\b)|(?=(?:同时|但|不过|然而))/i)
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+function hasScopedReviewerRejection(body, rejectionPattern, negatedPattern) {
+  return dispositionScopeParts(body).some((part) => (
+    rejectionPattern.test(part) && !negatedPattern.test(part)
+  ))
+}
+
 function reviewerAcceptanceKindForPart(part, hasTrailingNonBlockingLimitation = false) {
   const scopedNonBlocking = REVIEWER_SCOPED_NON_BLOCKING_ACCEPTANCE_PATTERN.test(part)
     && !REVIEWER_SCOPED_NON_BLOCKING_UNCERTAINTY_PATTERN.test(part)
@@ -358,16 +383,22 @@ function reviewerAcceptanceKind(body) {
 function isExplicitReviewerRejection(body) {
   const value = String(body || '')
   return REVIEWER_REJECTION_PATTERN.test(value)
-    || (REVIEWER_SCOPED_NON_BLOCKING_REJECTION_PATTERN.test(value)
-      && !NEGATED_REVIEWER_SCOPED_NON_BLOCKING_REJECTION_PATTERN.test(value))
+    || hasScopedReviewerRejection(
+      value,
+      REVIEWER_SCOPED_NON_BLOCKING_REJECTION_PATTERN,
+      NEGATED_REVIEWER_SCOPED_NON_BLOCKING_REJECTION_PATTERN,
+    )
     || NEGATED_REVIEWER_FIXED_CONFIRMATION_PATTERN.test(value)
     || QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || PAST_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || REVIEWER_SEPARATE_HANDLING_NON_ACCEPTANCE_PATTERN.test(value)
     || REVIEWER_SEPARATE_HANDLING_SUPPORT_REJECTION_PATTERN.test(value)
-    || (REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN.test(value)
-      && !NEGATED_REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN.test(value))
+    || hasScopedReviewerRejection(
+      value,
+      REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN,
+      NEGATED_REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN,
+    )
     || NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(value)
     || REVIEWER_WITHDRAWAL_REFUSAL_PATTERN.test(value)
 }
@@ -754,17 +785,47 @@ function ownerDecisionEvidence({ authorLogin, headOid, after, reviews, comments 
 
 function ownerCommentDecisionKind(body, marker, headOid) {
   const value = String(body || '')
-  if (isOwnerProductDecisionWithdrawal(value, headOid)) return 'reject'
+  const withdrawalKind = ownerProductDecisionWithdrawalKind(value, headOid)
+  if (withdrawalKind) return withdrawalKind
   return value.toLowerCase().includes(marker) ? 'accept' : null
 }
 
-function isOwnerProductDecisionWithdrawal(body, headOid) {
+function patternMatches(pattern, value) {
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`
+  return [...String(value || '').matchAll(new RegExp(pattern.source, flags))]
+    .map((match) => ({ start: match.index, end: match.index + match[0].length }))
+}
+
+function ownerProductDecisionWithdrawalKind(body, headOid) {
   const value = String(body || '')
-  if (!OWNER_PRODUCT_DECISION_WITHDRAWAL_PATTERN.test(value)) return false
-  const referencedHeads = value.match(/\b[0-9a-f]{7,40}\b/gi) || []
-  if (referencedHeads.length === 0) return true
   const currentHead = String(headOid || '').toLowerCase()
-  return referencedHeads.some((reference) => currentHead.startsWith(reference.toLowerCase()))
+  let latest = null
+  for (const part of dispositionScopeParts(value)) {
+    const referencedHeads = part.match(/\b[0-9a-f]{7,40}\b/gi) || []
+    if (referencedHeads.length > 0
+      && !referencedHeads.some((reference) => currentHead.startsWith(reference.toLowerCase()))) {
+      continue
+    }
+
+    const negatedRanges = patternMatches(NEGATED_OWNER_APPROVAL_WITHDRAWAL_PATTERN, part)
+    const pendingRanges = patternMatches(PENDING_OWNER_APPROVAL_WITHDRAWAL_PATTERN, part)
+    const withdrawalRanges = [
+      ...patternMatches(OWNER_PRODUCT_DECISION_WITHDRAWAL_PATTERN, part),
+      ...patternMatches(OWNER_GENERIC_APPROVAL_WITHDRAWAL_PATTERN, part),
+      ...patternMatches(OWNER_LATE_APPROVAL_WITHDRAWAL_PATTERN, part),
+    ].filter((withdrawal) => ![...negatedRanges, ...pendingRanges].some((range) => (
+      withdrawal.start >= range.start && withdrawal.end <= range.end
+    )))
+
+    const events = [
+      ...pendingRanges.map((range) => ({ ...range, kind: 'pending' })),
+      ...withdrawalRanges.map((range) => ({ ...range, kind: 'reject' })),
+    ].sort((left, right) => left.end - right.end
+      || left.start - right.start
+      || (left.kind === 'pending' ? 1 : -1))
+    if (events.length > 0) latest = events.at(-1).kind
+  }
+  return latest
 }
 
 function ownerWithdrawalTime(comment, marker, headOid) {

@@ -221,7 +221,11 @@ test('reviewer 拒绝 scoped non-blocking 判断时不能被嵌入的肯定片�
     'I disagree that this finding is non-blocking.',
     'I reject the claim that this finding is non-blocking.',
     'I disagree: this finding is non-blocking.',
+    'I do not disagree with Alice and reject the claim that this finding is non-blocking.',
+    'I have no objection to discussion and reject the claim that this finding is non-blocking.',
+    'I never oppose careful review yet I reject the claim that this finding is non-blocking.',
     '我拒绝“当前 finding 不阻塞”的判断。',
+    '我并不反对讨论同时拒绝“当前 finding 不阻塞”的判断。',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,
@@ -344,10 +348,16 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     'I no longer support treating this as a separate concern.',
     'I am unable to support handling this as a separate concern.',
     'I support not treating this as a separate concern.',
+    'I support not handling this as a separate concern.',
+    'I do not approve handling this as a separate concern.',
+    'I cannot approve treating this as a separate concern.',
+    'I approve not handling this as a separate concern.',
     'We endorse the proposal not to handle this as a separate concern.',
     '我不支持把它作为独立问题处理。',
     '我不再支持把它作为独立问题处理。',
     '我支持不要把它作为独立问题处理。',
+    '我不批准把它作为独立问题处理。',
+    '我批准不要把它作为独立问题处理。',
     'I would only accept this as a separate concern if the owner approves.',
     'I can accept this as a separate concern only if the migration lands.',
     'I accept this as a separate concern subject to owner approval.',
@@ -862,6 +872,8 @@ test('reviewer 明确反对 separate-concern 处理不能命中 acceptance', () 
     'I am against handling this separately.',
     'My opposition to separate handling remains.',
     'I reject treating this as a separate concern.',
+    'I do not disagree with Alice and reject handling this as a separate concern.',
+    'I have no objection to discussion yet I oppose treating this separately.',
     'I object to treating this as a separate concern.',
     'I refuse to accept this as a separate concern.',
     'I decline to accept this as a separate concern.',
@@ -2786,29 +2798,109 @@ test('owner marker 只有编辑历史证明后置新增时才能放行', () => {
 test('owner 撤回产品取舍授权会覆盖旧 marker，fresh marker 可再次放行', () => {
   const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
   const marker = ownerApprovalMarker(head)
-  const comments = [
-    { login: 'jerboy', body: marker, created_at: '2026-08-25T03:02:00Z' },
-    {
-      login: 'jerboy', body: 'I withdraw my approval of this product deferral.',
-      created_at: '2026-08-25T03:03:00Z',
-    },
-  ]
-  assert.equal(evaluateProductDecisionGate({
-    headOid: head,
-    authorLogin: 'author',
-    threads: [candidate],
-    comments,
-  }).satisfied, false)
+  for (const withdrawal of [
+    'I withdraw my approval.',
+    'I have withdrawn my approval.',
+    'We revoked our sign-off.',
+    'My approval has been withdrawn.',
+    '我撤回批准。',
+    '我的放行已撤回。',
+    'I withdraw my approval of this product deferral.',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+      comments: [
+        { login: 'jerboy', body: marker, created_at: '2026-08-25T03:02:00Z' },
+        { login: 'jerboy', body: withdrawal, created_at: '2026-08-25T03:03:00Z' },
+      ],
+    }).satisfied, false, withdrawal)
+  }
 
-  comments.push({
-    login: 'zqchris', body: marker, created_at: '2026-08-25T03:04:00Z',
-  })
   assert.equal(evaluateProductDecisionGate({
     headOid: head,
     authorLogin: 'author',
     threads: [candidate],
-    comments,
+    comments: [
+      { login: 'jerboy', body: marker, created_at: '2026-08-25T03:02:00Z' },
+      { login: 'jerboy', body: 'I withdraw my approval.', created_at: '2026-08-25T03:03:00Z' },
+      { login: 'zqchris', body: marker, created_at: '2026-08-25T03:04:00Z' },
+    ],
   }).satisfied, true)
+})
+
+test('owner 撤回的否定不撤销授权，条件或未来式保持 fail-closed', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  const marker = ownerApprovalMarker(head)
+  for (const statement of [
+    'I do not withdraw my approval.',
+    "I haven't withdrawn my approval.",
+    'I refuse to withdraw my approval.',
+    'My approval has not been withdrawn.',
+    '我不撤回批准。',
+    '我的批准没有撤回。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+      comments: [
+        { login: 'jerboy', body: marker, created_at: '2026-08-25T03:02:00Z' },
+        { login: 'jerboy', body: statement, created_at: '2026-08-25T03:03:00Z' },
+      ],
+    }).satisfied, true, statement)
+  }
+
+  for (const statement of [
+    'I will withdraw my approval tomorrow.',
+    'I plan to withdraw my approval after deployment.',
+    'If the migration fails, I withdraw my approval.',
+    '我将在部署后撤回批准。',
+    '如果迁移失败，我撤回批准。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+      comments: [
+        { login: 'jerboy', body: marker, created_at: '2026-08-25T03:02:00Z' },
+        { login: 'jerboy', body: statement, created_at: '2026-08-25T03:03:00Z' },
+      ],
+    }).satisfied, false, statement)
+  }
+
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+    comments: [
+      { login: 'jerboy', body: marker, created_at: '2026-08-25T03:02:00Z' },
+      {
+        login: 'jerboy', body: 'I will withdraw my approval tomorrow.',
+        created_at: '2026-08-25T03:03:00Z',
+      },
+      { login: 'zqchris', body: marker, created_at: '2026-08-25T03:04:00Z' },
+    ],
+  }).satisfied, true)
+
+  for (const statement of [
+    'I did not withdraw my approval before, but I withdraw my approval now.',
+    'I did not withdraw my approval earlier, now I revoke my approval.',
+    'I have not withdrawn my approval before, today I withdraw my approval.',
+    '我之前没有撤回批准，但现在撤回批准。',
+    '我的批准之前没有撤回现在已经撤回。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+      comments: [
+        { login: 'jerboy', body: marker, created_at: '2026-08-25T03:02:00Z' },
+        { login: 'jerboy', body: statement, created_at: '2026-08-25T03:03:00Z' },
+      ],
+    }).satisfied, false, statement)
+  }
 })
 
 test('owner 授权与撤回同秒时按可证明顺序或 fail-closed 判定', () => {
@@ -2851,7 +2943,7 @@ test('owner 撤回只作用于目标 head，后续 current-head review 可重新
   const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
   const marker = ownerApprovalMarker(head)
   const wrongHeadWithdrawal = {
-    login: 'jerboy', body: 'I revoke the product-decision authorization for deadbeef.',
+    login: 'jerboy', body: 'I withdraw my approval for deadbeef.',
     created_at: '2026-08-25T03:03:00Z',
   }
   assert.equal(evaluateProductDecisionGate({
@@ -2865,7 +2957,7 @@ test('owner 撤回只作用于目标 head，后续 current-head review 可重新
   }).satisfied, true)
 
   const currentHeadWithdrawal = {
-    login: 'jerboy', body: `I revoke the product-decision authorization for ${head.slice(0, 8)}.`,
+    login: 'jerboy', body: `I withdraw my approval for ${head.slice(0, 8)}.`,
     created_at: '2026-08-25T03:03:00Z',
   }
   assert.equal(evaluateProductDecisionGate({
@@ -2886,7 +2978,7 @@ test('owner 撤回只作用于目标 head，后续 current-head review 可重新
 test('owner marker 编辑为撤回时按编辑后的授权生命周期阻塞', () => {
   const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
   const marker = ownerApprovalMarker(head)
-  const withdrawal = 'This product decision approval has been withdrawn.'
+  const withdrawal = 'I withdraw my approval.'
   assert.equal(evaluateProductDecisionGate({
     headOid: head,
     authorLogin: 'author',

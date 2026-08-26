@@ -441,22 +441,40 @@ function readMergeOutcome(repo, prNumber) {
 }
 
 function evaluateCandidate(repo, pr) {
-  if (pr.isDraft) return { satisfied: false, reason: 'draft' }
+  const structuralReasons = []
+  if (pr.isDraft) structuralReasons.push('draft')
   if (!REPO_BASES[repo].includes(pr.baseRefName)) {
-    return { satisfied: false, reason: `base=${pr.baseRefName} 不在允许列表 [${REPO_BASES[repo]}]` }
+    structuralReasons.push(`base=${pr.baseRefName} 不在允许列表 [${REPO_BASES[repo]}]`)
   }
   const labelGate = evaluateMergeLabels(pr.labels)
-  if (!labelGate.satisfied) return labelGate
+  if (!labelGate.satisfied) structuralReasons.push(labelGate.reason)
   if (pr.mergeable !== 'MERGEABLE') {
-    return { satisfied: false, reason: `mergeable=${pr.mergeable}` }
+    structuralReasons.push(`mergeable=${pr.mergeable}`)
+  }
+  if (structuralReasons.length) {
+    return {
+      satisfied: false,
+      reasons: structuralReasons,
+      reason: structuralReasons.join('；'),
+    }
   }
 
   const requiredGate = requiredChecksGate(repo, pr)
-  if (!requiredGate.satisfied) return { satisfied: false, reason: requiredGate.reason }
+  const deterministicReasons = []
+  if (!requiredGate.satisfied) deterministicReasons.push(requiredGate.reason)
   const isBot = pr.author?.is_bot || /\[bot\]$/.test(pr.author?.login ?? '')
   const unresolved = unresolvedThreads(repo, pr.number)
   if (unresolved > 0) {
-    return { satisfied: false, reason: `${unresolved} 个未解决 review thread` }
+    deterministicReasons.push(`${unresolved} 个未解决 review thread`)
+  }
+  if (deterministicReasons.length) {
+    return {
+      satisfied: false,
+      reasons: deterministicReasons,
+      reason: deterministicReasons.join('；'),
+      requiredGate,
+      isBot,
+    }
   }
   const blockerGate = manualBlockerGate(repo, pr)
   if (!blockerGate.satisfied) return blockerGate

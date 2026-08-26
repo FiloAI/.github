@@ -17,6 +17,15 @@ node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 --expect
 
 列表接口暂时返回 `mergeable=UNKNOWN` 时会立即回读该 PR 的实时状态，不会把旧 PR 永久跳过；满足门禁的 PR 也不再受每仓固定合并配额限制。`--publish-status` 会幂等更新同一条 PR 状态评论，直接写明本轮不能合并的原因。高风险路径或标签会另行幂等更新 owner 请求评论，直接 `@zqchris @xd-bobo`；非 Chris 作者时还会尝试正式 request Chris。这个流程由合并管家执行，不依赖 Cursor。
 
+### PR 状态回复的人话契约
+
+状态回复必须先给结论，再给原因、唯一行动人、下一步和自动复查承诺；禁止把
+`mergeable=CONFLICTING`、`draft`、`required checks 未通过` 等内部 enum 当作唯一说明。
+冲突要写成“PR 分支和最新 main 有代码冲突，请 PR 作者合并 main、解决冲突并 push”；
+“当前 head 尚无审核凭证”要说明这是当前提交的新审核，不是误报，也不是一次提示后停止，
+作者通常无需操作，管家会继续审核并复查。CI 阻塞必须列出具体 check 名称和结论；多个已知
+确定性阻塞要在同一条状态回复中并列展示。原始机器原因保留在折叠技术细节中，便于维护者排查。
+
 ### CI 红灯桥接
 
 PR 总管预检会把当前 head 的 CI 失败/恢复原子写入本机

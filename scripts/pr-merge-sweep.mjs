@@ -56,6 +56,7 @@ import {
 } from './merge-execution-policy.mjs'
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 import { evaluateReviewEvidence } from './review-evidence-gate.mjs'
+import { evaluateProductDecisionGate } from './product-decision-gate.mjs'
 import {
   consumeCiBridgeEvents,
   bridgeEntriesFor,
@@ -337,6 +338,53 @@ function reviewEvidenceGate(repo, pr) {
   }
 }
 
+function productDecisionGate(repo, pr) {
+  try {
+    const comments = ghJsonPaginated([
+      'api', `repos/${repo}/issues/${pr.number}/comments`,
+    ]).map((comment) => ({
+      login: comment.user?.login || '',
+      body: comment.body || '',
+      created_at: comment.created_at,
+      updated_at: comment.updated_at,
+      id: comment.id,
+      source: 'issue-comment',
+    }))
+    const reviews = ghJsonPaginated([
+      'api', `repos/${repo}/pulls/${pr.number}/reviews`,
+    ]).map((review) => ({
+      login: review.user?.login || '',
+      body: review.body || '',
+      created_at: review.submitted_at,
+      id: review.id,
+      commit_id: review.commit_id,
+      source: 'review',
+    }))
+    const reviewComments = ghJsonPaginated([
+      'api', `repos/${repo}/pulls/${pr.number}/comments`,
+    ]).map((comment) => ({
+      login: comment.user?.login || '',
+      body: comment.body || '',
+      created_at: comment.created_at,
+      updated_at: comment.updated_at,
+      id: comment.id,
+      commit_id: comment.commit_id,
+      source: 'review-comment',
+    }))
+    return evaluateProductDecisionGate({
+      headOid: pr.headRefOid,
+      authorLogin: pr.author?.login || '',
+      events: [...comments, ...reviews, ...reviewComments],
+    })
+  } catch (error) {
+    return {
+      satisfied: false,
+      reason: `产品取舍门禁读取失败（fail-closed）：${String(error.message || error).slice(0, 160)}`,
+      evidence: null,
+    }
+  }
+}
+
 function unresolvedThreads(repo, prNumber) {
   const [owner, name] = repo.split('/')
   const q = `query { repository(owner: "${owner}", name: "${name}") {
@@ -481,6 +529,8 @@ function evaluateCandidate(repo, pr) {
   if (!blockerGate.satisfied) return blockerGate
   const ownerGate = highRiskGate(repo, pr)
   if (!ownerGate.satisfied) return ownerGate
+  const productGate = productDecisionGate(repo, pr)
+  if (!productGate.satisfied) return { ...productGate, requiredGate, isBot }
   const reviewGate = reviewEvidenceGate(repo, pr)
   if (!reviewGate.satisfied) {
     return { ...reviewGate, readyForReview: true, requiredGate, isBot }
@@ -491,6 +541,7 @@ function evaluateCandidate(repo, pr) {
     isBot,
     reviewEvidence: reviewGate.evidence,
     ownerEvidence: ownerGate.evidence,
+    productDecisionEvidence: productGate.evidence,
   }
 }
 

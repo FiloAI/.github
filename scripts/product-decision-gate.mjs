@@ -16,6 +16,9 @@ const PRESENT_PROGRESSIVE_NO_CHANGE_PATTERN =
 const AUTHOR_EXPLICIT_REFUSAL_PATTERN =
   /\b(?:(?:i|we)\s+(?:refuse|decline)|(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:refusing|declining)|(?:i|we)\s+(?:have|had)\s+(?:refused|declined)|(?:i|we)['’]ve\s+(?:refused|declined))\s+(?:to\s+(?:(?:fix|address|resolve)\s+(?:(?:this|it)|the\s+(?:issue|finding|behavio(?:u)?r))|change\s+(?:(?:this|it)|the\s+(?:behavio(?:u)?r|implementation))|(?:make|implement)\s+(?:(?:this|that|the\s+requested|any)\s+changes?))|(?:this|that|the\s+requested)\s+changes?)(?=$|[.。！？!?,，;；:\n]|\s+(?:in|here|now|before|after|until|because)\b)/i
 
+const AUTHOR_DECISION_NO_FIX_PATTERN =
+  /\b(?:i|we)(?:\s+(?:have|had)|['’]ve)?\s+(?:decid(?:e|ed)|determin(?:e|ed)|cho(?:ose|se|sen)|opt(?:ed)?)\s+(?:not\s+to|against)\s+(?:(?:be\s+)?(?:fix(?:ing)?|address(?:ing)?|resolv(?:e|ing))\s+(?:(?:this|it)|the\s+(?:issue|finding|behavio(?:u)?r))|chang(?:e|ing)\s+(?:(?:this|it)|the\s+(?:behavio(?:u)?r|implementation))|(?:mak(?:e|ing)|implement(?:ing)?)\s+(?:(?:this|that|the\s+requested)\s+)?changes?)(?=$|[.。！？!?,，;；:\n]|\s+(?:(?:in\s+(?:this\s+)?(?:pr|pull\s+request))|here|now|before|after|until|because)\b)/i
+
 const NEGATED_PRODUCT_DEFERRAL_PATTERN =
   /(?:不是|并非|并不是)\s*(?:产品(?:决定|决策|取舍)|不改|不修|暂不处理|超出(?:本\s*PR\s*)?范围)|\b(?:is\s+not|isn't|was\s+not|wasn't|not)\s+(?:a\s+)?(?:product\s+(?:decision|trade-?off)|by\s+design|expected\s+behavio(?:u)?r|out\s+of\s+scope|defer(?:red)?)\b|\b(?:do\s+not|don't|should\s+not|shouldn't|cannot|can't|won't|not)\s+keep(?:\s+(?:this|it))?\s+as[-\s]+is\b/gi
 
@@ -51,6 +54,9 @@ const REVIEWER_REJECTION_PATTERN =
 
 const QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN =
   /\b(?:(?:i\s+am|i['’]m|we\s+are|we['’]re|(?:you|they)\s+are|(?:you|they)['’]re|(?:he|she)\s+is)\s+(?:(?:currently|yet|still|now|at\s+this\s+time)\s+)?(?:unwilling|unable)\s+to\s+(?:accept|agree)|(?:i\s+am|i['’]m|we\s+are|we['’]re|(?:you|they)\s+are|(?:you|they)['’]re|(?:he|she)\s+is)\s+not\s+(?:(?:currently|yet|still|now|at\s+this\s+time)\s+)?(?:(?:willing|ready|prepared|able)\s+to\s+(?:accept|agree)|(?:accepting|agreeing)|in\s+(?:a\s+)?position\s+to\s+(?:accept|agree))|(?:do\s+not|don['’]t|cannot|can['’]t|will\s+not|won['’]t)\s+(?:(?:currently|yet|now|at\s+this\s+time)\s+)?(?:accept|agree))\b/i
+
+const PAST_REVIEWER_NON_ACCEPTANCE_PATTERN =
+  /\b(?:i|we|you|they|he|she)\s+(?:(?:(?:did\s+not|didn['’]t)\s+(?:accept|agree))|(?:never\s+(?:accept(?:ed)?|agree(?:d)?))|(?:(?:have|has|had)\s+never\s+(?:accepted|agreed))|(?:(?:was|were)\s+not\s+(?:accepting|agreeing)))\b/i
 
 const INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN =
   /\b(?:(?:i|we)\s+(?:(?:do|does)\s+not|don['’]t|doesn['’]t)\s+(?:think|believe|feel)\b[^.。！？!?；;\n]{0,64}\b(?:(?:(?:i|we|this|that|it)\s+)?(?:(?:should|can|could|would|will|may|might)\s+(?!(?:not|never)\b)(?:be\s+)?)?(?:accept(?:ed)?|agree(?:d)?)|(?:accepting|agreeing))|(?:i|we)\s+(?:(?:(?:do|does)\s+not|don['’]t|doesn['’]t|cannot|can['’]t)\s+see\s+(?:how|why)|(?:am|are)\s+not\s+convinced)\b[^.。！？!?；;\n]{0,64}\b(?:accept|agree)|(?:(?:there\s+is|there['’]s)|(?:i|we)\s+have)\s+no\s+(?:basis|reason|grounds?)\s+to\s+(?:accept|agree)|(?:i|we)\s+(?:(?:would|could|should|may|might)\s+not|wouldn['’]t|couldn['’]t|shouldn['’]t|mightn['’]t)\s+(?:(?:currently|yet|now|necessarily)\s+)?(?:(?:be\s+)?(?:willing|ready|prepared|able)\s+to\s+)?(?:accept|agree)|(?:i|we)\s+(?:would|could|can|may|might)\s+only\s+(?:accept|agree)|(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:not\s+(?:sure|certain|comfortable)|hesitant|reluctant)\b[^.。！？!?；;\n]{0,48}\b(?:accept|agree)|(?:i|we)\s+(?:would\s+)?hesitate\s+to\s+(?:accept|agree)|(?:i|we)\s+(?:(?:can|could|would|may|might)\s+)?(?:accept|agree)\b[^.。！？!?；;\n]{0,64}\b(?:only\s+if|if\s+(?!(?:useful|helpful|needed|desired|necessary)\b)|unless|provided(?:\s+that)?|as\s+long\s+as|once|after|when|subject\s+to|pending)\b|(?:if|unless|provided(?:\s+that)?|as\s+long\s+as|once|after|when|subject\s+to|pending)\b[^.。！？!?；;\n]{0,64}\b(?:i|we)\s+(?:(?:can|could|would|may|might)\s+)?(?:accept|agree))\b/i
@@ -247,37 +253,51 @@ function hasSemanticDispositionEdit(comment, dispositionKind) {
   })
 }
 
-function reviewerAcceptanceEvidence(body) {
+function reviewerDispositionParts(body) {
   return String(body || '')
-    .split(/(?<=[。！？!?；;])|\n+|(?<=\.)\s+/)
-    .map((part) => part.trim())
-    .filter((part) => (
-      part
-        && (REVIEWER_ACCEPTANCE_PATTERN.test(part)
-          || REVIEWER_SEPARATE_HANDLING_ACCEPTANCE_PATTERN.test(part))
-        && !REVIEWER_ACCEPTANCE_UNCERTAINTY_PATTERN.test(part)
-        && !REVIEWER_REJECTION_PATTERN.test(part)
-        && !NEGATED_REVIEWER_FIXED_CONFIRMATION_PATTERN.test(part)
-        && !QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN.test(part)
-        && !INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN.test(part)
-        && !REVIEWER_SEPARATE_HANDLING_NON_ACCEPTANCE_PATTERN.test(part)
-        && !REVIEWER_SEPARATE_HANDLING_SUPPORT_REJECTION_PATTERN.test(part)
-        && !NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(part)
-    ))
-    .join(' ')
+    .split(/(?<=[。！？!?；;])|\n+|(?<=\.)\s+|(?<=[,，])\s*(?=(?:but|however|yet)\b|但|不过|然而)/i)
+    .map((part) => part
+      .replace(/^(?:(?:but|however|yet)\b|但|不过|然而)\s*/i, '')
+      .trim())
+    .filter(Boolean)
+}
+
+function reviewerAcceptanceKindForPart(part) {
+  if (!(REVIEWER_ACCEPTANCE_PATTERN.test(part)
+    || REVIEWER_SEPARATE_HANDLING_ACCEPTANCE_PATTERN.test(part))
+    || REVIEWER_ACCEPTANCE_UNCERTAINTY_PATTERN.test(part)
+    || isExplicitReviewerRejection(part)) return null
+  if (REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN.test(part)
+    || REVIEWER_SEPARATE_HANDLING_ACCEPTANCE_PATTERN.test(part)) return 'deferral'
+  if (REVIEWER_FIXED_ACCEPTANCE_PATTERN.test(part)) return 'fixed'
+  return 'generic'
+}
+
+function latestReviewerTextDisposition(body) {
+  let latest = null
+  for (const part of reviewerDispositionParts(body)) {
+    if (isExplicitReviewerRejection(part)) {
+      latest = { disposition: 'reject', acceptanceKind: null, evidence: part }
+      continue
+    }
+    const acceptanceKind = reviewerAcceptanceKindForPart(part)
+    if (acceptanceKind) latest = { disposition: 'accept', acceptanceKind, evidence: part }
+  }
+  return latest
+}
+
+function reviewerAcceptanceEvidence(body) {
+  const latest = latestReviewerTextDisposition(body)
+  return latest?.disposition === 'accept' ? latest.evidence : ''
 }
 
 function isExplicitReviewerAcceptance(body) {
-  return Boolean(reviewerAcceptanceEvidence(body))
+  return latestReviewerTextDisposition(body)?.disposition === 'accept'
 }
 
 function reviewerAcceptanceKind(body) {
-  const value = reviewerAcceptanceEvidence(body)
-  if (!isExplicitReviewerAcceptance(value)) return null
-  if (REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN.test(value)
-    || REVIEWER_SEPARATE_HANDLING_ACCEPTANCE_PATTERN.test(value)) return 'deferral'
-  if (REVIEWER_FIXED_ACCEPTANCE_PATTERN.test(value)) return 'fixed'
-  return 'generic'
+  const latest = latestReviewerTextDisposition(body)
+  return latest?.disposition === 'accept' ? latest.acceptanceKind : null
 }
 
 function isExplicitReviewerRejection(body) {
@@ -285,6 +305,7 @@ function isExplicitReviewerRejection(body) {
   return REVIEWER_REJECTION_PATTERN.test(value)
     || NEGATED_REVIEWER_FIXED_CONFIRMATION_PATTERN.test(value)
     || QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
+    || PAST_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || REVIEWER_SEPARATE_HANDLING_NON_ACCEPTANCE_PATTERN.test(value)
     || REVIEWER_SEPARATE_HANDLING_SUPPORT_REJECTION_PATTERN.test(value)
@@ -294,8 +315,7 @@ function isExplicitReviewerRejection(body) {
 }
 
 function reviewerDispositionKind(body) {
-  if (isExplicitReviewerRejection(body)) return 'reject'
-  return reviewerAcceptanceKind(body) ? 'accept' : null
+  return latestReviewerTextDisposition(body)?.disposition || null
 }
 
 function reviewerDispositionTime(comment) {
@@ -391,6 +411,7 @@ function isProductDeferral(body) {
   return PRODUCT_DEFERRAL_PATTERN.test(value)
     || PRESENT_PROGRESSIVE_NO_CHANGE_PATTERN.test(value)
     || AUTHOR_EXPLICIT_REFUSAL_PATTERN.test(value)
+    || AUTHOR_DECISION_NO_FIX_PATTERN.test(value)
     || INTENDED_BEHAVIOR_DEFERRAL_PATTERN.test(value)
     || (NO_CHANGE_DEFERRAL_PATTERN.test(value)
       && !NON_BEHAVIOR_NO_CHANGE_PATTERN.test(value))
@@ -556,7 +577,7 @@ function latestReviewerDisposition({
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
     const semanticEdit = hasSemanticDispositionEdit(comment, reviewerDispositionKind)
     const at = reviewerDispositionTime(comment)
-    if (isExplicitReviewerRejection(comment.body)) {
+    if (reviewerDispositionKind(comment.body) === 'reject') {
       if (at >= originalBoundary) {
         dispositions.push({
           disposition: 'reject', at,

@@ -193,6 +193,12 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     'I have not withdrawn the objection.',
     "I haven't withdrawn the blocker.",
     'I did not retract the concern.',
+    'I did not accept this as a separate concern.',
+    "I didn't agree to this deferral.",
+    'I never agreed to this deferral.',
+    'We never accepted this as a separate concern.',
+    'I had never accepted this as a separate concern.',
+    'We were not accepting this as a separate concern.',
     'The objection has not been withdrawn.',
     '我无法确认已经修复。',
     '我尚未核实问题已解决。',
@@ -302,6 +308,8 @@ test('reviewer 带 willing 或 ready 的肯定接受仍可放行', () => {
     'I support treating this as a separate concern.',
     'We endorse handling this as a separate concern.',
     '我支持把它作为独立问题处理。',
+    'I accepted this as a separate concern.',
+    'I agreed to this deferral.',
     'I accept this as a separate concern and can file a follow-up if useful.',
     'I agree to this deferral; I can add more detail later if needed.',
   ]) {
@@ -537,6 +545,50 @@ test('reviewer 后续否定 support 覆盖较早 acceptance，后续明确支持
     authorLogin: 'author',
     threads: [candidate],
   }).satisfied, true)
+})
+
+test('reviewer 过去时否定覆盖较早 acceptance，后续明确接受可再放行', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'Accepted as a separate concern.',
+  })
+  candidate.comments.push({
+    login: 'codex', body: 'I never agreed to this deferral.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'I accepted this as a separate concern.',
+    created_at: '2026-08-25T03:04:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
+test('同一 reviewer 评论按最后一个明确 disposition 判定', () => {
+  for (const [reviewerReply, satisfied] of [
+    ['I accepted this as a separate concern before, but I did not accept this as a separate concern now.', false],
+    ['I did not accept this as a separate concern before, but I accept this as a separate concern now.', true],
+    ['I agreed to this deferral before; I never agreed to this deferral after the update.', false],
+    ['I never agreed to this deferral before; I agree to this deferral now.', true],
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, satisfied, reviewerReply)
+  }
 })
 
 test('reviewer 把旧 acceptance 编辑为更新 rejection 时按有效编辑时间阻塞', () => {
@@ -2657,6 +2709,14 @@ test('not going to fix 或 address 是明确产品取舍延期', () => {
     "We've declined to implement this change.",
     'We refuse to make any changes.',
     'I decline the requested change.',
+    'We decided not to fix this.',
+    'We have decided not to address this.',
+    "We've decided not to resolve this.",
+    'I had decided not to change the behavior here.',
+    'We decided against fixing this.',
+    'We determined not to implement the requested change.',
+    'I chose not to make this change.',
+    "We've opted not to address the issue.",
     'This will not be fixed in this PR.',
     "We won't change this.",
     'I will not change it.',
@@ -2718,6 +2778,10 @@ test('积极进行中的当前修复不是 no-fix disposition', () => {
     'I decline to change this documentation; fixed the behavior.',
     'We are refusing to address the fixture; fixed the implementation.',
     'We refuse to make changes to the test; fixed the implementation.',
+    'We decided not to change this test; fixed the implementation.',
+    "We've decided not to address the documentation; fixed the behavior.",
+    'We decided not to fix this in tests; fixed the implementation.',
+    'We have decided not to address this in documentation; fixed the behavior.',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,

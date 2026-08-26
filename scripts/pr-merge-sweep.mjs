@@ -64,6 +64,10 @@ import {
   appendCiBridgeReason,
   readCiBridge,
 } from './ci-mainline-bridge.mjs'
+import {
+  formatUnresolvedReviewReason,
+  readUnresolvedReviewThreads,
+} from './review-thread-details.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
 const repoArgIdx = process.argv.indexOf('--repo')
@@ -146,7 +150,12 @@ function replyMergeFailure(repo, pr, error, { outcomeUnverified = false } = {}) 
 }
 
 function replyMergeStatus(repo, pr, reason, { state = 'blocked' } = {}) {
-  const body = buildMergeStatusComment({ headOid: pr.headRefOid, reason, state })
+  const body = buildMergeStatusComment({
+    headOid: pr.headRefOid,
+    reason,
+    state,
+    authorLogin: pr.author?.login || '',
+  })
   const comments = ghJsonPaginated([
     'api', `repos/${repo}/issues/${pr.number}/comments`,
   ])
@@ -386,11 +395,11 @@ function productDecisionGate(repo, pr) {
 }
 
 function unresolvedThreads(repo, prNumber) {
-  const [owner, name] = repo.split('/')
-  const q = `query { repository(owner: "${owner}", name: "${name}") {
-    pullRequest(number: ${prNumber}) { reviewThreads(first: 100) { nodes { isResolved } } } } }`
-  const d = ghJson(['api', 'graphql', '-f', `query=${q}`])
-  return d.data.repository.pullRequest.reviewThreads.nodes.filter((t) => !t.isResolved).length
+  return readUnresolvedReviewThreads({
+    repo,
+    prNumber,
+    runGraphql: (query) => ghJson(['api', 'graphql', '-f', `query=${query}`]),
+  })
 }
 
 function checkConclusions(repo, sha) {
@@ -513,8 +522,8 @@ function evaluateCandidate(repo, pr) {
   if (!requiredGate.satisfied) deterministicReasons.push(requiredGate.reason)
   const isBot = pr.author?.is_bot || /\[bot\]$/.test(pr.author?.login ?? '')
   const unresolved = unresolvedThreads(repo, pr.number)
-  if (unresolved > 0) {
-    deterministicReasons.push(`${unresolved} 个未解决 review thread`)
+  if (unresolved.length > 0) {
+    deterministicReasons.push(formatUnresolvedReviewReason(unresolved))
   }
   if (deterministicReasons.length) {
     return {

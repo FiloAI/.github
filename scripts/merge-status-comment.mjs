@@ -64,8 +64,14 @@ export function humanizeMergeReason(reason, { state = 'blocked' } = {}) {
       actions.push('这不是误报；以 GitHub 当前 head 的具体 check 为准处理，旧 head 的失败不会沿用。')
       owner = 'PR 作者/CI 维护者'
     } else if (/未解决 review thread/i.test(clause)) {
-      summaries.push(`还有 ${clause.replace(/个未解决 review thread.*/i, '').trim()} 条 review 讨论未解决。`)
-      actions.push('请逐条修复并 resolve 这些讨论；全部 resolve 后管家会自动复查。')
+      const detailMatch = clause.match(/^未解决 review thread[：:]\s*(\d+)\s*条([\s\S]*)$/i)
+      const legacyCount = clause.match(/(\d+)\s*个未解决 review thread/i)?.[1]
+      const count = detailMatch?.[1] || legacyCount || '?'
+      const details = detailMatch?.[2]?.trim()
+      summaries.push(details
+        ? `还有 ${count} 条 review 讨论未解决。具体卡点：\n${details}`
+        : `还有 ${count} 条 review 讨论未解决。`)
+      actions.push('请 PR 作者按下面列出的文件/行号逐条处理；处理完成后由作者或 reviewer resolve，管家会自动复查。')
       owner = 'PR 作者与对应 reviewer'
     } else if (/当前 head 尚无可审计/i.test(clause) || /等待审核/i.test(clause)) {
       summaries.push('当前提交（head）还没有可审计的审核结论。')
@@ -111,7 +117,7 @@ export function humanizeMergeReason(reason, { state = 'blocked' } = {}) {
   }
 }
 
-export function buildMergeStatusComment({ headOid, reason, state = 'blocked' }) {
+export function buildMergeStatusComment({ headOid, reason, state = 'blocked', authorLogin = '' }) {
   const cleanReason = clean(reason) || 'GitHub 未返回具体原因'
   const clipped = cleanReason.length > MAX_REASON_LENGTH
     ? `${cleanReason.slice(0, MAX_REASON_LENGTH - 1)}…`
@@ -131,10 +137,14 @@ ${clipped}
 </details>`
   }
   const human = humanizeMergeReason(cleanReason, { state })
+  const author = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(String(authorLogin || ''))
+    ? `@${authorLogin}`
+    : '未读取到作者账号'
   return `${MERGE_STATUS_MARKER}
 ℹ️ **合并管家：${human.title}**
 
 - **当前 head**：\`${String(headOid || '').slice(0, 7) || 'unknown'}\`
+- **PR 作者**：${author}
 - **结论**：${human.summary}
 - **谁需要处理**：${human.owner}
 - **下一步**：${human.action}

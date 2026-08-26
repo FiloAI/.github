@@ -59,6 +59,19 @@ test('CI 阻塞展示具体 check，并说明修复后会自动复查', () => {
   assert.match(body, /自动复查.*会/)
 })
 
+test('未解决 review 阻塞展示具体文件、行号和下一步', () => {
+  const body = buildMergeStatusComment({
+    headOid: 'a'.repeat(40),
+    authorLogin: 'zqchris',
+    reason: '未解决 review thread：1 条\n- desktop/src/components/mailEditor/utils/clipboard-images.ts:627（Cursor Bugbot，Medium（中风险））：重复图片没有对应的未占用槽位，可能插入错误图片。',
+  })
+  assert.match(body, /PR 作者.*@zqchris/)
+  assert.match(body, /还有 1 条 review 讨论未解决/)
+  assert.match(body, /clipboard-images\.ts:627/)
+  assert.match(body, /重复图片没有对应的未占用槽位/)
+  assert.match(body, /PR 作者按下面列出的文件\/行号逐条处理/)
+})
+
 test('纯函数人话映射不改变 fail-closed 语义', () => {
   const result = humanizeMergeReason('mergeable=UNKNOWN')
   assert.equal(result.owner, '合并管家')

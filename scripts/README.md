@@ -35,7 +35,7 @@ node scripts/pr-merge-sweep.mjs --repo FiloAI/filoai-frontend --pr 3410 --expect
 
 ### PR 状态回复的人话契约
 
-状态回复必须先给结论，再给原因、唯一行动人、下一步和自动复查承诺；禁止把
+状态回复必须先给结论，再给原因、唯一行动人、下一步和自动复查承诺；review thread 必须完整分页读取，不能只看前 100 条；对未解决 thread 必须列出文件/行号、来源、严重级别和问题摘要。禁止把
 `mergeable=CONFLICTING`、`draft`、`required checks 未通过` 等内部 enum 当作唯一说明。
 冲突要写成“PR 分支和最新 main 有代码冲突，请 PR 作者合并 main、解决冲突并 push”；
 “当前 head 尚无审核凭证”要说明这是当前提交的新审核，不是误报，也不是一次提示后停止，

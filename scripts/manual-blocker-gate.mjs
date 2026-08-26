@@ -51,6 +51,15 @@ const CLAUSE_UNCERTAINTY =
 const BLOCKER_UNCERTAINTY =
   /\b(?:may|might|could)\s+be\s+(?:an?\s+)?(?:merge|release|functionality)\s+blocker\b|\b(?:is|are)\s+(?:possibly|potentially)\s+(?:an?\s+)?(?:merge|release|functionality)\s+blocker\b|\b(?:investigat(?:e|es|ed|ing)|check(?:ing)?|assess(?:ing)?|determin(?:e|ing)|not\s+sure|unclear)\b[^.。！？!?\n]{0,64}\b(?:merge|release|functionality)\s+blocker\b|(?:可能|也许|或许|疑似|尚不确定|不确定|正在(?:调查|排查|确认|评估))[^。！？!?\n]{0,40}(?:合并|发布|功能)(?:阻断|阻塞)/i
 
+// “summary FAILURE 仍是合并前阻塞”这类句子是在描述 CI/check 的事实，
+// 不是评论者本人发起 veto。技术门禁由 live check gate 管理，恢复后应自动解除，
+// 不能再被自由文本分类器跨 head 永久保留为人工阻止。
+const TECHNICAL_GATE_REPORT_PATTERN =
+  /\b(?:ci|checks?|tests?|build|workflow|summary|status|mergeable|mergeStateStatus|reviewDecision|required)\b|(?:CI|检查|测试|构建|工作流|门禁|状态)/i
+
+const FIRST_PERSON_VETO_PATTERN =
+  /(?:我|我们)(?:明确|正式|现在|当前|仍然|继续)?(?:不同意|不允许|不批准|不确认|反对|否决|阻止|阻断)[^。！？!?\n]{0,24}(?:合并|merge)|\b(?:i|we)\s+(?:do\s+not|don't|cannot|can't|will\s+not|won't)\s+(?:approve|allow)\b/i
+
 const PENDING_CONDITION =
   /(?:不同意|不确认|不允许|不批准|未批准|未签字|没有签字|尚未签字|仍然?|还(?:需|要)|需要|必须|先(?:修|处理|解决|等)|待(?:修|处理|解决)|才能|之后再|之前不|前不|(?:应|应该|应当)[^。！？!?；;\n]{0,24}(?:签字|确认|批准)|(?:如果|若)[^。！？!?；;\n]{0,80}(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)|(?:修复|处理|解决|通过|完成|签字|确认|批准|成功|变绿)后|(?:仍|还|尚)(?:然)?(?:未|没)(?:修复|解决|完成|通过|验证|批准|签字|就绪)|(?:验证|审查|检查|迁移|发布)[^。！？!?；;\n]{0,24}(?:仍|还|尚)?(?:未|没)(?:修复|解决|完成|通过))|\b(?:not\s+approved?|not\s+signed\s+off|has(?:n't|\s+not)\s+signed\s+off|do\s+not\s+approve|don't\s+approve|need(?:s|ed)?\s+to|must|before)\b|\b(?:should|ought\s+to)\s+(?:still\s+)?(?:sign\s*off|approve)\b|\b(?:is|are|remain(?:s)?)\s+(?:still\s+)?(?:broken|unfinished|incomplete|failing|unsafe|outstanding|not\s+(?:fixed|resolved|complete|completed|validated|approved|ready))\b|\bstill\s+(?:a\s+)?(?:merge\s+|release\s+|functionality\s+)?blocker\b|\b(?:after|when|once|if|unless|until|as\s+long\s+as|so\s+long\s+as|on\s+condition\s+that|provided(?:\s+that)?|providing(?:\s+that)?|assuming(?:\s+that)?|subject\s+to|pending)\b[^.。！？!?；;\n]{0,100}\b(?:fix(?:es|ed)?|pass(?:es|ed)?|complete(?:s|d)?|resolve(?:s|d)?|sign(?:s|ed|ing)?\s*off|approve(?:s|d)?|succeed(?:s|ed|ing)?|green|ready|safe|healthy|done)\b/i
 
@@ -225,6 +234,33 @@ function withoutSpeculativeBlockerSignals(text) {
   return removePatternMatches(text, BLOCKER_UNCERTAINTY)
 }
 
+// A maintainer may describe a live CI/check failure and then, in the same
+// sentence, add an independent human disposition after a contrast marker:
+// "No CI blockers, but do not merge".  Suppress only the pure technical
+// fragment; never let the presence of "CI" elsewhere in the sentence hide
+// the actual veto.
+function blockerFragmentsFrom(clause) {
+  return String(clause || '')
+    .split(/\s+(?:but|however|yet)\s+|(?:，|,)\s*(?:但|但是|不过)\s*|\s*[—–]\s*/iu)
+    .map((fragment) => fragment.trim())
+    .filter(Boolean)
+}
+
+function fragmentHasExplicitBlock(fragment, headOid) {
+  const technicalGateReport = TECHNICAL_GATE_REPORT_PATTERN.test(fragment)
+  const approvalNegation = APPROVAL_NEGATION_PATTERN.test(fragment)
+    && (referencesHead(fragment, headOid) || /(?:合并|\bmerge\b)/i.test(fragment))
+  const explicitVeto = approvalNegation
+    || FIRST_PERSON_VETO_PATTERN.test(fragment)
+    || (!technicalGateReport && EXPLICIT_VETO_PATTERN.test(fragment))
+    || ACTIVE_MERGE_VETO_PATTERN.test(fragment)
+    || NEGATED_MERGE_SAFETY_PATTERN.test(fragment)
+  return explicitVeto
+    || (!CLAUSE_UNCERTAINTY.test(fragment)
+      && !technicalGateReport
+      && BLOCK_PATTERNS.some((pattern) => pattern.test(fragment)))
+}
+
 function classifyTextIntent(body, headOid, prNumber) {
   if (STEWARD_MARKERS.some((marker) => String(body || '').includes(marker))) return null
   const clauses = clausesFrom(withoutMachineStateSignals(body))
@@ -235,18 +271,11 @@ function classifyTextIntent(body, headOid, prNumber) {
     const clauseUncertainty = CLAUSE_UNCERTAINTY.test(commenterClause)
     const pendingCondition = isPendingReleaseCondition(commenterClause, prNumber)
       || hasBareApprovalQualifier(commenterClause)
-    const approvalNegation = APPROVAL_NEGATION_PATTERN.test(commenterClause)
-      && (referencesHead(commenterClause, headOid) || /(?:合并|\bmerge\b)/i.test(commenterClause))
-
     const blockableClause = withoutNonBlockingSignals(
       withoutSpeculativeBlockerSignals(commenterClause),
     )
-    const explicitVeto = approvalNegation
-      || EXPLICIT_VETO_PATTERN.test(blockableClause)
-      || ACTIVE_MERGE_VETO_PATTERN.test(blockableClause)
-      || NEGATED_MERGE_SAFETY_PATTERN.test(blockableClause)
-    const explicitBlock = explicitVeto
-      || (!clauseUncertainty && BLOCK_PATTERNS.some((pattern) => pattern.test(blockableClause)))
+    const explicitBlock = blockerFragmentsFrom(blockableClause)
+      .some((fragment) => fragmentHasExplicitBlock(fragment, headOid))
     if (explicitBlock) {
       sawBlock = true
     }

@@ -27,7 +27,7 @@ test('组织合并与 review 门禁脚本本身属于高风险', () => {
   assert.equal(classifyHighRisk({ repo: 'FiloAI/.github', files: ['scripts/merge-label-policy.mjs'] }).highRisk, true)
 })
 
-test('高风险改动要求 Chris 或 Bobo 对当前 head 留下批准', () => {
+test('高风险改动要求 Chris 或 jerboy 对当前 head 留下批准', () => {
   const blocked = evaluateHighRiskApproval({
     headOid: head,
     authorLogin: 'contributor',
@@ -42,13 +42,13 @@ test('高风险改动要求 Chris 或 Bobo 对当前 head 留下批准', () => {
     authorLogin: 'contributor',
     highRisk: true,
     riskReason: 'path:auth/service.ts',
-    reviews: [{ login: 'zqchris', state: 'APPROVED', commit_id: head }],
+    reviews: [{ login: 'jerboy', state: 'APPROVED', commit_id: head }],
   })
   assert.equal(approved.satisfied, true)
 })
 
-test('Chris 或 Bobo 自己提交高风险改动时不再要求额外 owner 确认', () => {
-  for (const authorLogin of ['zqchris', 'xd-bobo']) {
+test('Chris 或 jerboy 自己提交高风险改动时不再要求额外 owner 确认', () => {
+  for (const authorLogin of ['zqchris', 'jerboy']) {
     const result = evaluateHighRiskApproval({
       headOid: head,
       authorLogin,

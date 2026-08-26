@@ -169,6 +169,53 @@ test('原 reviewer 明确接受范围解释后不再阻塞', () => {
   assert.equal(result.satisfied, true)
 })
 
+test('孤立 non-blocking 说明不能冒充 reviewer 接受产品取舍', () => {
+  for (const reviewerReply of [
+    'The CI failure is non-blocking.',
+    'The test failure is not a blocker.',
+    'This general risk is non-blocking.',
+    'The CI failure for this finding is non-blocking.',
+    "This finding's test failure is not a blocker.",
+    'This finding may be non-blocking.',
+    'This deferral is probably non-blocking.',
+    'CI 不阻塞合并。',
+    '测试失败属于非阻塞风险。',
+    '这个 finding 的 CI 失败不阻塞合并。',
+    '这个产品取舍可能不阻塞合并。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, false, reviewerReply)
+  }
+})
+
+test('明确绑定 finding 或产品取舍的 non-blocking 说明仍可接受', () => {
+  for (const reviewerReply of [
+    'This finding is non-blocking.',
+    'The proposed deferral is not a blocker.',
+    'This product trade-off is non-blocking.',
+    'The current scope decision is not a blocker.',
+    'This separate concern is non-blocking.',
+    'Non-blocking for this finding.',
+    '这个产品取舍不再阻塞。',
+    '当前 finding 属于非阻塞。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, true, reviewerReply)
+  }
+})
+
 test('reviewer 明确否定接受时不能因关键词误放行', () => {
   for (const reviewerReply of [
     '我不同意，这仍然阻塞合并。',

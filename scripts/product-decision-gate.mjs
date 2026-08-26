@@ -38,7 +38,16 @@ const NEGATED_INTENDED_BEHAVIOR_PATTERN =
   /\b(?:is\s+not|isn't|was\s+not|wasn't|not)\s+(?:working\s+as\s+intended|intended\s+behavio(?:u)?r)\b/gi
 
 const REVIEWER_ACCEPTANCE_PATTERN =
-  /(?:接受|同意)[^。！？!?\n]{0,32}(?:延期|取舍|范围(?:说明)?|另开|后续处理|单独处理)|(?:确认|核实)[^。！？!?\n]{0,24}(?:已|已经)(?:修复|处理|解决)|不再阻塞|不阻塞|非阻塞|撤回(?:阻止|阻塞|反对|异议)|可以另开|\b(?:accept(?:ed)?|agree(?:d)?)\b[^.。！？!?\n]{0,40}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr))\b|\b(?:confirm(?:ed)?|verif(?:y|ied))\b[^.。！？!?\n]{0,32}\b(?:fixed|addressed|resolved)\b|\bmakes?\s+sense\b[^.。！？!?\n]{0,40}\b(?:scope|separate|follow-?up)\b|\b(?:not\s+a\s+blocker|non-?blocking|withdraw(?:n)?\s+(?:the\s+)?(?:blocker|objection|concern|request\s+for\s+changes)|keep\s+the\s+scope\s+tight)\b/i
+  /(?:接受|同意)[^。！？!?\n]{0,32}(?:延期|取舍|范围(?:说明)?|另开|后续处理|单独处理)|(?:确认|核实)[^。！？!?\n]{0,24}(?:已|已经)(?:修复|处理|解决)|撤回(?:阻止|阻塞|反对|异议)|可以另开|\b(?:accept(?:ed)?|agree(?:d)?)\b[^.。！？!?\n]{0,40}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr))\b|\b(?:confirm(?:ed)?|verif(?:y|ied))\b[^.。！？!?\n]{0,32}\b(?:fixed|addressed|resolved)\b|\bmakes?\s+sense\b[^.。！？!?\n]{0,40}\b(?:scope|separate|follow-?up)\b|\b(?:withdraw(?:n)?\s+(?:the\s+)?(?:blocker|objection|concern|request\s+for\s+changes)|keep\s+the\s+scope\s+tight)\b/i
+
+const REVIEWER_SCOPED_NON_BLOCKING_ACCEPTANCE_PATTERN =
+  /(?:产品取舍|延期(?:决定|处理)?|范围(?:说明|决定|取舍)?|单独处理(?:方案)?|另开(?:处理|事项)?|P[01]\s*(?:问题|finding)|(?:当前|这个|此|该)?\s*finding)\s*(?:(?:是|属于|仍(?:然)?|已经?|现在)\s*)?(?:不再阻塞|不阻塞|非阻塞)|(?:不再阻塞|不阻塞|非阻塞)\s*(?:的是|为|针对|就)?\s*(?:产品取舍|延期(?:决定|处理)?|范围(?:说明|决定|取舍)?|单独处理(?:方案)?|另开(?:处理|事项)?|P[01]\s*(?:问题|finding)|(?:当前|这个|此|该)?\s*finding)|\b(?:(?:this|that|the|current|proposed|reported|P[01])\s+)?(?:finding|deferral|product\s+trade-?off|scope(?:\s+decision)?|separate\s+concern)\b\s+(?:(?:is|remains?)\s+)?(?:(?:clearly|explicitly)\s+)?(?:non-?blocking|not\s+a\s+blocker)\b|\b(?:non-?blocking|not\s+a\s+blocker)\b\s+(?:for|as\s+to|with\s+respect\s+to)\s+(?:(?:this|that|the|current|proposed|reported|P[01])\s+)?(?:finding|deferral|product\s+trade-?off|scope(?:\s+decision)?|separate\s+concern)\b/i
+
+const REVIEWER_SCOPED_NON_BLOCKING_UNCERTAINTY_PATTERN =
+  /(?:可能|也许|或许|大概|未必|不确定)|\b(?:may|might|could|can|probably|possibly|perhaps|maybe|likely|arguably)\b/i
+
+const REVIEWER_SCOPED_NON_BLOCKING_TECHNICAL_SUBJECT_PATTERN =
+  /(?:\b(?:ci|tests?|test\s+failure|build|checks?|jobs?|deployment|general\s+risk)\b[^.。！？!?；;\n]{0,64}\b(?:finding|deferral|product\s+trade-?off|scope(?:\s+decision)?|separate\s+concern)\b[^.。！？!?；;\n]{0,32}\b(?:non-?blocking|not\s+a\s+blocker)\b|\b(?:finding|deferral|product\s+trade-?off|scope(?:\s+decision)?|separate\s+concern)\b(?:['’]s)?[^.。！？!?；;\n]{0,32}\b(?:ci|tests?|test\s+failure|build|checks?|jobs?|deployment|general\s+risk)\b[^.。！？!?；;\n]{0,32}\b(?:non-?blocking|not\s+a\s+blocker)\b)|(?:CI|测试(?:失败)?|构建|检查|任务|部署|一般风险)[^。！？!?；;\n]{0,32}(?:产品取舍|延期|范围|finding)[^。！？!?；;\n]{0,24}(?:不再阻塞|不阻塞|非阻塞)|(?:产品取舍|延期|范围|finding)[^。！？!?；;\n]{0,24}(?:CI|测试(?:失败)?|构建|检查|任务|部署|一般风险)[^。！？!?；;\n]{0,24}(?:不再阻塞|不阻塞|非阻塞)/i
 
 const REVIEWER_FIXED_ACCEPTANCE_PATTERN =
   /(?:确认|核实)[^。！？!?\n]{0,24}(?:已|已经)(?:修复|处理|解决)|\b(?:confirm(?:ed)?|verif(?:y|ied))\b[^.。！？!?\n]{0,32}\b(?:fixed|addressed|resolved)\b/i
@@ -263,12 +272,17 @@ function reviewerDispositionParts(body) {
 }
 
 function reviewerAcceptanceKindForPart(part) {
+  const scopedNonBlocking = REVIEWER_SCOPED_NON_BLOCKING_ACCEPTANCE_PATTERN.test(part)
+    && !REVIEWER_SCOPED_NON_BLOCKING_UNCERTAINTY_PATTERN.test(part)
+    && !REVIEWER_SCOPED_NON_BLOCKING_TECHNICAL_SUBJECT_PATTERN.test(part)
   if (!(REVIEWER_ACCEPTANCE_PATTERN.test(part)
-    || REVIEWER_SEPARATE_HANDLING_ACCEPTANCE_PATTERN.test(part))
+    || REVIEWER_SEPARATE_HANDLING_ACCEPTANCE_PATTERN.test(part)
+    || scopedNonBlocking)
     || REVIEWER_ACCEPTANCE_UNCERTAINTY_PATTERN.test(part)
     || isExplicitReviewerRejection(part)) return null
   if (REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN.test(part)
-    || REVIEWER_SEPARATE_HANDLING_ACCEPTANCE_PATTERN.test(part)) return 'deferral'
+    || REVIEWER_SEPARATE_HANDLING_ACCEPTANCE_PATTERN.test(part)
+    || scopedNonBlocking) return 'deferral'
   if (REVIEWER_FIXED_ACCEPTANCE_PATTERN.test(part)) return 'fixed'
   return 'generic'
 }

@@ -39,10 +39,29 @@ export function bridgeEntriesFor(repo, bridge = readCiBridge()) {
 export function formatCiBridgeEvent(event) {
   const status = event.status === 'recovered' ? 'CI 已恢复' : 'CI 失败'
   const checks = (event.checks || [])
-    .map((check) => `${check.name || 'unknown'}=${check.conclusion || check.status || 'unknown'}`)
+    .map((check, index) => `${check.name || check.context || check.workflow || `check-${index + 1}`}=${check.conclusion || check.status || 'unknown'}`)
     .join(', ')
   return `${event.repo}#${event.pr} head=${String(event.head || '').slice(0, 12)} ${status}` +
     (checks ? ` [${checks}]` : '')
+}
+
+/**
+ * 将 PR 总管发现的当前 head CI 事实并入合并管家的 PR 状态回复。
+ * bridge 只补充上下文，是否阻塞仍由 live GitHub 门禁决定；head 不一致时丢弃旧事件。
+ */
+export function appendCiBridgeReason(reason, event, head) {
+  const base = String(reason || '').trim()
+  if (!event || event.status !== 'failed' || !event.head || (head && event.head !== head)) return base
+  const checks = (event.checks || [])
+    .filter((check) => /FAILURE|ERROR|TIMED_OUT|CANCELLED|STARTUP_FAILURE/i.test(
+      String(check.conclusion ?? check.status ?? check.state ?? ''),
+    ))
+    .map((check, index) => `${check.name || check.context || check.workflow || `check-${index + 1}`}=${check.conclusion || check.status || check.state || 'failure'}`)
+  const detail = checks.length
+    ? `CI bridge 失败详情：${checks.join('，')}`
+    : 'CI bridge 已确认当前 head 存在失败 check'
+  if (base.includes(detail)) return base
+  return `${base}${base ? '；' : ''}${detail}（head=${String(event.head).slice(0, 12)}）`
 }
 
 export function consumeCiBridgeEvents({

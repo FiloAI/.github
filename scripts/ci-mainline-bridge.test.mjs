@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import {
   bridgeEntriesFor,
+  appendCiBridgeReason,
   consumeCiBridgeEvents,
   formatCiBridgeEvent,
   readCiBridge,
@@ -55,4 +56,20 @@ test('同一 bridge 指纹只消费一次', () => {
   }
   assert.equal(consumeCiBridgeEvents({ bridge, ackFile }).length, 1)
   assert.equal(consumeCiBridgeEvents({ bridge, ackFile }).length, 0)
+})
+
+test('当前 head 的 CI bridge 失败会补进 PR 阻塞原因，旧 head 不会污染', () => {
+  const event = {
+    status: 'failed',
+    head: 'a'.repeat(40),
+    checks: [{ name: 'PR · Dispatcher', conclusion: 'failure' }],
+  }
+  assert.match(
+    appendCiBridgeReason('required checks 未通过: summary=failure', event, event.head),
+    /PR · Dispatcher=failure.*head=aaaaaaaaaaaa/,
+  )
+  assert.equal(
+    appendCiBridgeReason('required checks 未通过: summary=failure', event, 'b'.repeat(40)),
+    'required checks 未通过: summary=failure',
+  )
 })

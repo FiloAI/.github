@@ -59,6 +59,7 @@ import {
   consumeCiBridgeEvents,
   bridgeEntriesFor,
   formatCiBridgeEvent,
+  appendCiBridgeReason,
   readCiBridge,
 } from './ci-mainline-bridge.mjs'
 
@@ -92,6 +93,7 @@ if (!DRY_RUN && ONLY_PR === null) {
 const ciBridge = readCiBridge()
 const ciBridgeEntries = bridgeEntriesFor(ONLY_REPO, ciBridge)
   .filter((event) => ONLY_PR === null || Number(event.pr) === ONLY_PR)
+const ciBridgeByPr = new Map(ciBridgeEntries.map((event) => [`${event.repo}#${event.pr}`, event]))
 const newCiBridgeEntries = DRY_RUN
   ? consumeCiBridgeEvents({ bridge: { ...ciBridge, events: Object.fromEntries(
     ciBridgeEntries.map((event) => [`${event.repo}#${event.pr}`, event]),
@@ -500,10 +502,15 @@ for (const repo of REPOS) {
     const tag = `[${repo}#${listedPr.number}]`
     const skip = (why) => {
       totalSkipped++
-      console.log(`${tag} SKIP: ${why} — ${pr.title || listedPr.title}`)
+      const publishedWhy = appendCiBridgeReason(
+        why,
+        ciBridgeByPr.get(`${repo}#${pr.number}`),
+        pr.headRefOid,
+      )
+      console.log(`${tag} SKIP: ${publishedWhy} — ${pr.title || listedPr.title}`)
       if (PUBLISH_STATUS) {
         try {
-          const changed = replyMergeStatus(repo, pr, why)
+          const changed = replyMergeStatus(repo, pr, publishedWhy)
           console.log(`${tag} STATUS ${changed ? 'PUBLISHED' : 'UNCHANGED'}`)
         } catch (commentError) {
           console.log(`${tag} STATUS PUBLISH FAILED: ${String(commentError.message || commentError).slice(0, 200)}`)

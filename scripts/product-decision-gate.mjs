@@ -55,6 +55,9 @@ const QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN =
 const INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN =
   /\b(?:(?:i|we)\s+(?:(?:do|does)\s+not|don['’]t|doesn['’]t)\s+(?:think|believe|feel)\b[^.。！？!?；;\n]{0,64}\b(?:(?:(?:i|we|this|that|it)\s+)?(?:(?:should|can|could|would|will|may|might)\s+(?!(?:not|never)\b)(?:be\s+)?)?(?:accept(?:ed)?|agree(?:d)?)|(?:accepting|agreeing))|(?:i|we)\s+(?:(?:(?:do|does)\s+not|don['’]t|doesn['’]t|cannot|can['’]t)\s+see\s+(?:how|why)|(?:am|are)\s+not\s+convinced)\b[^.。！？!?；;\n]{0,64}\b(?:accept|agree)|(?:(?:there\s+is|there['’]s)|(?:i|we)\s+have)\s+no\s+(?:basis|reason|grounds?)\s+to\s+(?:accept|agree)|(?:i|we)\s+(?:(?:would|could|should|may|might)\s+not|wouldn['’]t|couldn['’]t|shouldn['’]t|mightn['’]t)\s+(?:(?:currently|yet|now|necessarily)\s+)?(?:(?:be\s+)?(?:willing|ready|prepared|able)\s+to\s+)?(?:accept|agree)|(?:i|we)\s+(?:would|could|can|may|might)\s+only\s+(?:accept|agree)|(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:not\s+(?:sure|certain|comfortable)|hesitant|reluctant)\b[^.。！？!?；;\n]{0,48}\b(?:accept|agree)|(?:i|we)\s+(?:would\s+)?hesitate\s+to\s+(?:accept|agree)|(?:i|we)\s+(?:(?:can|could|would|may|might)\s+)?(?:accept|agree)\b[^.。！？!?；;\n]{0,64}\b(?:only\s+if|if\s+(?!(?:useful|helpful|needed|desired|necessary)\b)|unless|provided(?:\s+that)?|as\s+long\s+as|once|after|when|subject\s+to|pending)\b|(?:if|unless|provided(?:\s+that)?|as\s+long\s+as|once|after|when|subject\s+to|pending)\b[^.。！？!?；;\n]{0,64}\b(?:i|we)\s+(?:(?:can|could|would|may|might)\s+)?(?:accept|agree))\b/i
 
+const REVIEWER_SEPARATE_HANDLING_NON_ACCEPTANCE_PATTERN =
+  /\b(?:(?:(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:not\s+(?:comfortable|sure|certain)|uncomfortable|uneasy|hesitant|reluctant)|(?:i|we)\s+(?:would|could|may|might)\s+not\s+be\s+comfortable)\s+(?:(?:with|about|to)\s+)?(?:treat(?:ing)?|handl(?:e|ing)|regard(?:ing)?|view(?:ing)?)[^.。！？!?；;\n]{0,48}\b(?:as\s+(?:a\s+)?separate\s+(?:concern|issue|pr)|separately)|(?:(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:only\s+)?comfortable|(?:i|we)\s+(?:(?:would|could|can|may|might)\s+)?(?:only\s+)?be\s+comfortable)\s+(?:(?:with|about)\s+)?(?:treating|handling|regarding|viewing)[^.。！？!?；;\n]{0,48}\b(?:as\s+(?:a\s+)?separate\s+(?:concern|issue|pr)|separately)[^.。！？!?；;\n]{0,48}\b(?:only\s+if|if\s+(?!(?:useful|helpful|needed|desired|necessary)\b)|unless|provided(?:\s+that)?|as\s+long\s+as|once|after|when|subject\s+to|pending)\b)/i
+
 const REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN =
   /(?:反对|不赞成|不支持)[^。！？!?\n]{0,80}(?:延期|取舍|范围|另开|后续处理|单独处理|独立(?:问题|事项|处理))|\b(?:disagree(?:s|d|ing)?(?:\s+(?:that|with))?|oppos(?:e|es|ed|ing)|opposition\s+to|(?:am|is|are|was|were)\s+against|reject(?:s|ed|ing)?|object(?:s|ed|ing)?\s+to|(?:refus(?:e|es|ed|ing)|declin(?:e|es|ed|ing))\s+to\s+(?:accept|agree)|(?:refusal|declination)\s+to\s+(?:accept|agree))\b[^.。！？!?\n]{0,80}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr|handling|treatment)|(?:treat(?:ed|ing)?|handl(?:e|ing)|address(?:ed|ing)?)\b[^.。！？!?\n]{0,24}\bseparately)\b/i
 
@@ -250,6 +253,7 @@ function reviewerAcceptanceEvidence(body) {
         && !NEGATED_REVIEWER_FIXED_CONFIRMATION_PATTERN.test(part)
         && !QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN.test(part)
         && !INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN.test(part)
+        && !REVIEWER_SEPARATE_HANDLING_NON_ACCEPTANCE_PATTERN.test(part)
         && !NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(part)
     ))
     .join(' ')
@@ -273,6 +277,7 @@ function isExplicitReviewerRejection(body) {
     || NEGATED_REVIEWER_FIXED_CONFIRMATION_PATTERN.test(value)
     || QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
+    || REVIEWER_SEPARATE_HANDLING_NON_ACCEPTANCE_PATTERN.test(value)
     || (REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN.test(value)
       && !NEGATED_REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN.test(value))
     || NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(value)

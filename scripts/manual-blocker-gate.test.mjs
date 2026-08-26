@@ -734,6 +734,24 @@ live：head \`${headOid.slice(0, 10)}\`；summary / desktop / lint-and-test 已 
   assert.deepEqual(result.blockers, [])
 })
 
+test('机器字段清理不会吞掉赋值后的真人 veto', () => {
+  for (const body of [
+    'status=do not merge',
+    'conclusion=must not merge',
+    'status=cannot merge',
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'zqchris', permission: 'admin', body,
+        created_at: '2026-08-26T03:48:35Z',
+      }],
+    })
+    assert.equal(result.satisfied, false, body)
+    assert.deepEqual(result.blockers, ['zqchris'], body)
+  }
+})
+
 test('真人描述 CI 或 check 阻塞不升级为跨 head 人工 veto', () => {
   for (const body of [
     '当前 summary FAILURE 仍是合并前阻塞，不能声称准入已满足。',
@@ -753,16 +771,21 @@ test('真人描述 CI 或 check 阻塞不升级为跨 head 人工 veto', () => {
 })
 
 test('包含技术背景的第一人称明确 veto 仍然阻塞', () => {
-  const result = evaluateManualBlockers({
-    headOid,
-    comments: [{
-      login: 'zqchris', permission: 'admin',
-      body: '我明确阻止这个 PR 合并：CI 之外还有数据丢失风险。',
-      created_at: '2026-08-26T03:48:35Z',
-    }],
-  })
-  assert.equal(result.satisfied, false)
-  assert.deepEqual(result.blockers, ['zqchris'])
+  for (const body of [
+    '我明确阻止这个 PR 合并：CI 之外还有数据丢失风险。',
+    '不要合并，CI 之外还有数据丢失风险。',
+    'Do not merge: CI is green, but the migration is unsafe.',
+  ]) {
+    const result = evaluateManualBlockers({
+      headOid,
+      comments: [{
+        login: 'zqchris', permission: 'admin', body,
+        created_at: '2026-08-26T03:48:35Z',
+      }],
+    })
+    assert.equal(result.satisfied, false, body)
+    assert.deepEqual(result.blockers, ['zqchris'], body)
+  }
 })
 
 test('COMMENTED review 总结里的明确否决会阻塞', () => {

@@ -34,6 +34,7 @@ test('review thread 分页会读取第 101 条之后的未解决意见', () => {
   assert.equal(result[0].id, 'open-101')
   assert.equal(calls.length, 2)
   assert.match(calls[1], /after: "cursor-1"/)
+  assert.match(calls[1], /comments\(first: 1\)/)
 })
 
 test('阻塞原因包含作者需要看的位置、来源、级别和问题摘要', () => {
@@ -50,6 +51,22 @@ test('阻塞原因包含作者需要看的位置、来源、级别和问题摘�
   assert.match(reason, /clipboard-images\.ts:627/)
   assert.match(reason, /Cursor Bugbot，Medium（中风险）/)
   assert.match(reason, /重复图片没有对应的未占用槽位/)
+})
+
+test('阻塞原因逐条展示全部未解决 thread，不用汇总行隐藏后续卡点', () => {
+  const threads = Array.from({ length: 6 }, (_, index) => ({
+    isResolved: false,
+    path: `src/file-${index + 1}.ts`,
+    line: index + 10,
+    comments: { nodes: [{
+      body: `P${index % 3} finding ${index + 1}`,
+      author: { login: 'reviewer' },
+    }] },
+  }))
+  const reason = formatUnresolvedReviewReason(threads)
+  assert.match(reason, /未解决 review thread：6 条/)
+  assert.match(reason, /src\/file-6\.ts:15/)
+  assert.doesNotMatch(reason, /其余 .* 条未展开/)
 })
 
 test('GraphQL 查询对仓库名和游标做安全转义', () => {

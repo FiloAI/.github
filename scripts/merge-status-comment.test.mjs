@@ -72,6 +72,16 @@ test('未解决 review 阻塞展示具体文件、行号和下一步', () => {
   assert.match(body, /PR 作者按下面列出的文件\/行号逐条处理/)
 })
 
+test('bot PR 作者账号在人话状态里保持可识别', () => {
+  const body = buildMergeStatusComment({
+    headOid: 'a'.repeat(40),
+    authorLogin: 'cursor[bot]',
+    reason: 'mergeable=CONFLICTING',
+  })
+  assert.match(body, /PR 作者.*@cursor\[bot\]/)
+  assert.doesNotMatch(body, /未读取到作者账号/)
+})
+
 test('纯函数人话映射不改变 fail-closed 语义', () => {
   const result = humanizeMergeReason('mergeable=UNKNOWN')
   assert.equal(result.owner, '合并管家')

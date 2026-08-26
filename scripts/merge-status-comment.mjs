@@ -137,7 +137,7 @@ ${clipped}
 </details>`
   }
   const human = humanizeMergeReason(cleanReason, { state })
-  const author = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(String(authorLogin || ''))
+  const author = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:\[bot\])?$/.test(String(authorLogin || ''))
     ? `@${authorLogin}`
     : '未读取到作者账号'
   return `${MERGE_STATUS_MARKER}

@@ -1,4 +1,3 @@
-const MAX_THREADS_IN_REASON = 5
 const MAX_SUMMARY_LENGTH = 220
 
 function cleanText(value) {
@@ -70,11 +69,8 @@ export function summarizeReviewThread(thread) {
 export function formatUnresolvedReviewReason(threads) {
   if (!Array.isArray(threads) || threads.length === 0) return null
   const lines = [`未解决 review thread：${threads.length} 条`]
-  for (const detail of threads.slice(0, MAX_THREADS_IN_REASON).map(summarizeReviewThread)) {
+  for (const detail of threads.map(summarizeReviewThread)) {
     lines.push(`- ${detail.location}（${detail.author}，${detail.severity}）：${detail.summary.replace(/[；;]/g, '，')}`)
-  }
-  if (threads.length > MAX_THREADS_IN_REASON) {
-    lines.push(`- 其余 ${threads.length - MAX_THREADS_IN_REASON} 条未展开；请在 PR 的未解决 review 列表逐条处理。`)
   }
   return lines.join('\n')
 }
@@ -83,7 +79,7 @@ export function buildReviewThreadsQuery({ owner, name, prNumber, after = null })
   const cursor = after == null ? '' : `, after: ${JSON.stringify(after)}`
   return `query { repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) {
     pullRequest(number: ${Number(prNumber)}) { reviewThreads(first: 100${cursor}) {
-      nodes { id isResolved path line originalLine comments(first: 10) {
+      nodes { id isResolved path line originalLine comments(first: 1) {
         nodes { body author { login } createdAt url }
       } }
       pageInfo { hasNextPage endCursor }

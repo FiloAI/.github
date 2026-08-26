@@ -12,6 +12,9 @@ const BLOCK_PATTERNS = [
 const EXPLICIT_VETO_PATTERN =
   /(?:当前|现在|暂时)?(?:不宜|不应|不能|不可|不要|先别|暂不|禁止)(?:(?!阻塞|阻断|卡住|拦截)[^。！？!\n]){0,24}(?:合并|merge)|\b(?:do\s+not|don't|cannot|can't|should\s+not|must\s+not)\s+merge\b|\bnot\s+ready\s+to\s+merge\b/i
 
+const LEADING_EXPLICIT_VETO_PATTERN =
+  /^(?:当前|现在|暂时)?(?:不宜|不应|不能|不可|不要|先别|暂不|禁止)(?:(?!阻塞|阻断|卡住|拦截)[^。！？!\n]){0,24}(?:合并|merge)|^(?:please\s+)?(?:do\s+not|don't|cannot|can't|should\s+not|must\s+not)\s+merge\b|^not\s+ready\s+to\s+merge\b/i
+
 const ACTIVE_MERGE_VETO_PATTERN =
   /\b(?:i(?:['’]m|\s+am)|we(?:['’]re|\s+are))\s+block(?:ing)?\s+(?:this(?=\s*(?:$|[.。！？!?，,；;]|until\b))|(?:this\s+|the\s+)?(?:merge|merging|pr|pull\s+request)\b)|^(?:please\s+)?block(?:ing)?\s+(?:this(?=\s*(?:$|[.。！？!?，,；;]|until\b))|(?:this\s+|the\s+)?(?:merge|merging|pr|pull\s+request)\b)|^(?:please\s+)?hold(?:ing)?\s+(?:this\s+|the\s+)?(?:merge|pr|pull\s+request)\b|\b(?:(?:i|we)\s+)?veto(?:ed|ing)?\s+(?:this\s+|the\s+)?(?:merge|pr|pull\s+request)\b/i
 
@@ -137,7 +140,7 @@ function clausesFrom(body) {
 // natural-language blocker classifier.
 function withoutMachineStateSignals(body) {
   return String(body || '').replace(
-    /\b(?:mergeable|mergeStateStatus|reviewDecision|isDraft|headRefOid|status|conclusion)\s*=\s*[A-Za-z_][A-Za-z0-9-]*/g,
+    /\b(?:mergeable|mergeStateStatus|reviewDecision|isDraft|headRefOid|status|conclusion)\s*=\s*/gi,
     ' ',
   )
 }
@@ -252,6 +255,7 @@ function fragmentHasExplicitBlock(fragment, headOid) {
     && (referencesHead(fragment, headOid) || /(?:合并|\bmerge\b)/i.test(fragment))
   const explicitVeto = approvalNegation
     || FIRST_PERSON_VETO_PATTERN.test(fragment)
+    || LEADING_EXPLICIT_VETO_PATTERN.test(fragment)
     || (!technicalGateReport && EXPLICIT_VETO_PATTERN.test(fragment))
     || ACTIVE_MERGE_VETO_PATTERN.test(fragment)
     || NEGATED_MERGE_SAFETY_PATTERN.test(fragment)

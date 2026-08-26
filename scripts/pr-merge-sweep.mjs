@@ -124,7 +124,11 @@ const REPOS = Object.keys(REPO_BASES)
 const TRUSTED_STEWARD_LOGINS = ['zqchris', 'jerboy', 'GaoWeiLiuXD']
 
 function gh(args, opts = {}) {
-  return execFileSync('gh', args, { encoding: 'utf8', ...opts })
+  return execFileSync('gh', args, {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    ...opts,
+  })
 }
 function ghJson(args) {
   return JSON.parse(gh(args))

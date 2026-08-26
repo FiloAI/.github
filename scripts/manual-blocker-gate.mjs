@@ -122,6 +122,17 @@ function clausesFrom(body) {
     .filter(Boolean)
 }
 
+// Merge-steward diagnostic comments often quote GitHub's machine fields, for
+// example `mergeStateStatus=BLOCKED`. Those values describe repository state;
+// they are not a maintainer veto and must never become one through the
+// natural-language blocker classifier.
+function withoutMachineStateSignals(body) {
+  return String(body || '').replace(
+    /\b(?:mergeable|mergeStateStatus|reviewDecision|isDraft|headRefOid|status|conclusion)\s*=\s*[A-Za-z_][A-Za-z0-9-]*/g,
+    ' ',
+  )
+}
+
 function referencesCurrentPr(text, prNumber) {
   const value = String(text || '')
   if (/\b(?:this|current)\s+(?:pull\s+request|pr)\b|(?:本|当前)(?:\s*PR|拉取请求)/i.test(value)) {
@@ -216,7 +227,7 @@ function withoutSpeculativeBlockerSignals(text) {
 
 function classifyTextIntent(body, headOid, prNumber) {
   if (STEWARD_MARKERS.some((marker) => String(body || '').includes(marker))) return null
-  const clauses = clausesFrom(body)
+  const clauses = clausesFrom(withoutMachineStateSignals(body))
   let sawBlock = false
   let sawRelease = false
   for (const [clauseIndex, clause] of clauses.entries()) {

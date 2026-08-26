@@ -712,6 +712,28 @@ test('跨消息的非阻止说明不会在 current-head 放行后重新生成 ve
   }
 })
 
+test('合并管家引用的 GitHub 机器状态字段不构成真人阻止', () => {
+  const result = evaluateManualBlockers({
+    headOid,
+    prNumber: 3550,
+    comments: [{
+      login: 'zqchris',
+      permission: 'admin',
+      created_at: '2026-08-24T19:48:02Z',
+      body: `【owner】当前 head 审核凭证拉取失败（fail-closed），不是本 head 代码或 CI 失败。
+
+live：head \`${headOid.slice(0, 10)}\`；summary / desktop / lint-and-test 已 SUCCESS；mergeable=MERGEABLE，mergeStateStatus=BLOCKED；reviewDecision 空。CI 绿灯本身不会触发合并。本轮不另推 commit、不制造新 head。等外部门禁恢复对该 head 的终审凭证即可。`,
+    }, {
+      login: 'zqchris',
+      permission: 'admin',
+      created_at: '2026-08-25T17:00:50Z',
+      body: '我并未阻止，我同意此合并的',
+    }],
+  })
+  assert.equal(result.satisfied, true)
+  assert.deepEqual(result.blockers, [])
+})
+
 test('COMMENTED review 总结里的明确否决会阻塞', () => {
   const result = evaluateManualBlockers({
     headOid,

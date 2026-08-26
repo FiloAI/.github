@@ -9,7 +9,9 @@ const ACTIONS = new Set(['defer', 'accept-deferral', 'approve', 'withdraw'])
 const SHA = '[0-9a-f]{40}'
 
 const MARKER_TOKEN_PATTERN = /<!--[\s\S]*?-->/g
-const MARKER_HINT_PATTERN = /filoai:(?:finding|product-disposition)\b/i
+// Only an HTML-comment-shaped token is protocol input. Plain documentation,
+// status text, or bot summaries that mention the marker name are ignored.
+const MARKER_HINT_PATTERN = /<!--[\s\S]*?filoai:(?:finding|product-disposition)\b/i
 
 function normalizeLogin(login) {
   return String(login || '').trim().toLowerCase()
@@ -128,7 +130,15 @@ export function parseProductDecisionMarkers(events = []) {
       })
       continue
     }
-    for (const token of relevant) markers.push(parseMarkerToken(token, event))
+    for (const token of relevant) {
+      const marker = parseMarkerToken(token, event)
+      markers.push(marker || {
+        valid: false,
+        type: 'unknown',
+        error: 'marker token 包含协议提示但整体格式无法解析',
+        event,
+      })
+    }
   }
   return markers.filter(Boolean)
 }
@@ -138,7 +148,7 @@ function sameHead(left, right) {
 }
 
 function markerDescription(marker) {
-  return `<!-- filoai:${marker.type === 'finding' ? 'finding' : 'product-disposition'} ... -->`
+  return `filoai:${marker.type === 'finding' ? 'finding' : 'product-disposition'} marker`
 }
 
 function blocked(reason, extra = {}) {
@@ -189,9 +199,14 @@ export function evaluateProductDecisionGate({
     if (!['review', 'review-comment'].includes(finding.event?.source)) {
       return blocked(`finding=${finding.id} 必须来自 GitHub review 或 inline review comment，普通 issue comment 不能创建授权 finding`, { markers })
     }
-    const history = dispositions
+    const allHistory = dispositions
       .filter((item) => item.findingId === finding.id)
       .sort((left, right) => eventTime(left) - eventTime(right))
+    if (allHistory.length > 0 && (!finding.created_at || allHistory.some((item) => !item.created_at))) {
+      return blocked(`finding=${finding.id} 的事件缺少可靠 created_at，无法证明授权发生在 finding 之后`, { markers })
+    }
+    const findingCreatedAt = eventTime(finding)
+    const history = allHistory.filter((item) => eventTime(item) > findingCreatedAt)
     if (history.length === 0) continue
 
     let deferred = false
@@ -222,7 +237,7 @@ export function evaluateProductDecisionGate({
           return blocked(`finding=${finding.id} 的 approve 只能由 FiloAI owner 发布（实际为 ${item.actor || 'unknown'}）`, { markers })
         }
         if (!sameHead(item.head, head)) {
-          return blocked(`finding=${finding.id} 的 owner approve 绑定旧 head=${item.head}，当前 head=${head}；请针对当前 head 重新授权`, { markers })
+          continue
         }
         if (deferred) authorized = item
         continue
@@ -232,7 +247,7 @@ export function evaluateProductDecisionGate({
           return blocked(`finding=${finding.id} 的 withdraw 只能由原 reviewer 或 FiloAI owner 发布`, { markers })
         }
         if (!sameHead(item.head, head)) {
-          return blocked(`finding=${finding.id} 的 withdraw 绑定的不是当前 head=${head}`, { markers })
+          continue
         }
         authorized = null
       }

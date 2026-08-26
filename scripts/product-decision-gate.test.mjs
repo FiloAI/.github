@@ -227,6 +227,19 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     'I am not convinced we should accept this as a separate concern.',
     'There is no basis to accept this as a separate concern.',
     'We have no grounds to agree to this deferral.',
+    'Confirmed this is not fixed.',
+    'Verified this is not resolved.',
+    "Confirmed this isn't addressed.",
+    'Verified this has not been resolved.',
+    "Confirmed the finding hasn't been fixed.",
+    'Confirmed this is not yet fully fixed.',
+    'Verified this has yet to be resolved.',
+    'Confirmed this is far from fixed.',
+    'Verified this is anything but resolved.',
+    'Verified this remains unresolved.',
+    'Confirmed this is still unaddressed.',
+    '确认仍未修复。',
+    '核实尚未解决。',
   ]) {
     const result = evaluateProductDecisionGate({
       headOid: head,
@@ -271,6 +284,71 @@ test('reviewer 带 willing 或 ready 的肯定接受仍可放行', () => {
         authorReply: '超出本 PR 范围，不改。',
         reviewerReply,
       })],
+    }).satisfied, true, reviewerReply)
+  }
+})
+
+test('reviewer 对 fixed claim 的肯定确认仍可放行', () => {
+  for (const reviewerReply of [
+    'Confirmed this is fixed and resolved.',
+    'Verified this has been resolved.',
+    'Confirmed this is not only fixed but also resolved.',
+    'Confirmed this is fixed, not unresolved.',
+  ]) {
+    const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+    candidate.comments.push({
+      login: 'author', body: 'Fixed this and added tests.',
+      created_at: '2026-08-25T03:02:00Z',
+    })
+    candidate.comments.push({
+      login: 'codex', body: reviewerReply,
+      created_at: '2026-08-25T03:03:00Z',
+    })
+
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, true, reviewerReply)
+  }
+})
+
+test('reviewer 对 fixed claim 的否定确认继续保留产品取舍门', () => {
+  for (const reviewerReply of [
+    'Confirmed this is not fixed.',
+    'Verified this is not resolved.',
+    "Confirmed this wasn't addressed.",
+    "Verified the issue hasn't been resolved.",
+    'Confirmed this has yet to be fixed.',
+    'Verified this is far from resolved.',
+    'Confirmed this is anything but addressed.',
+    'Confirmed this remains unfixed.',
+    '确认仍未修复。',
+  ]) {
+    const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+    candidate.comments.push({
+      login: 'author', body: 'Fixed this and added tests.',
+      created_at: '2026-08-25T03:02:00Z',
+    })
+    candidate.comments.push({
+      login: 'codex', body: reviewerReply,
+      created_at: '2026-08-25T03:03:00Z',
+    })
+
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, false, reviewerReply)
+
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+      reviews: [{
+        login: 'zqchris', state: 'APPROVED', commit_id: head,
+        submitted_at: '2026-08-25T03:04:00Z',
+      }],
     }).satisfied, true, reviewerReply)
   }
 })

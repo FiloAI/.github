@@ -40,6 +40,9 @@ const REVIEWER_ACCEPTANCE_PATTERN =
 const REVIEWER_FIXED_ACCEPTANCE_PATTERN =
   /(?:确认|核实)[^。！？!?\n]{0,24}(?:已|已经)(?:修复|处理|解决)|\b(?:confirm(?:ed)?|verif(?:y|ied))\b[^.。！？!?\n]{0,32}\b(?:fixed|addressed|resolved)\b/i
 
+const NEGATED_REVIEWER_FIXED_CONFIRMATION_PATTERN =
+  /(?:确认|核实)[^。！？!?；;\n]{0,24}(?:仍(?:然)?|还)?(?:未|尚未|没有|并未|还没)(?:完全)?(?:修复|处理|解决)|\b(?:confirm(?:s|ed|ing)?|verif(?:y|ies|ied|ying))\b[^.。！？!?；;\n]{0,48}\b(?:(?:not|never)\s+(?!only\b)(?:(?:yet|still|fully|completely|actually)\s+)*(?:been\s+)?(?:fixed|addressed|resolved)|(?:isn['’]t|aren['’]t|wasn['’]t|weren['’]t)\s+(?!only\b)(?:(?:yet|still|fully|completely|actually)\s+)*(?:fixed|addressed|resolved)|(?:hasn['’]t|haven['’]t|hadn['’]t)\s+been\s+(?:fixed|addressed|resolved)|(?:has|have|had)\s+yet\s+to\s+be\s+(?:fixed|addressed|resolved)|no\s+longer\s+(?:fixed|addressed|resolved)|(?:is|are|was|were|remain(?:s|ed|ing)?)\s+(?:(?:still|yet|currently)\s+)?(?:unfixed|unaddressed|unresolved)|(?:is|are|was|were|remain(?:s|ed|ing)?)\s+(?:(?:still|currently)\s+)?(?:far\s+from|anything\s+but)\s+(?:fixed|addressed|resolved))\b/i
+
 const REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN =
   /(?:接受|同意)[^。！？!?\n]{0,32}(?:延期|取舍|范围(?:说明)?|另开|后续处理|单独处理)|可以另开|单独处理|\b(?:accept(?:ed)?|agree(?:d)?)\b[^.。！？!?\n]{0,40}\b(?:deferral|trade-?off|scope|out\s+of\s+scope|follow-?up|separate\s+(?:concern|issue|pr))\b|\bmakes?\s+sense\b[^.。！？!?\n]{0,40}\b(?:scope|separate|follow-?up)\b|\b(?:separate\s+concern|keep\s+the\s+scope\s+tight)\b/i
 
@@ -244,6 +247,7 @@ function reviewerAcceptanceEvidence(body) {
         && REVIEWER_ACCEPTANCE_PATTERN.test(part)
         && !REVIEWER_ACCEPTANCE_UNCERTAINTY_PATTERN.test(part)
         && !REVIEWER_REJECTION_PATTERN.test(part)
+        && !NEGATED_REVIEWER_FIXED_CONFIRMATION_PATTERN.test(part)
         && !QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN.test(part)
         && !INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN.test(part)
         && !NEGATED_REVIEWER_WITHDRAWAL_PATTERN.test(part)
@@ -266,6 +270,7 @@ function reviewerAcceptanceKind(body) {
 function isExplicitReviewerRejection(body) {
   const value = String(body || '')
   return REVIEWER_REJECTION_PATTERN.test(value)
+    || NEGATED_REVIEWER_FIXED_CONFIRMATION_PATTERN.test(value)
     || QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || (REVIEWER_SEPARATE_CONCERN_REJECTION_PATTERN.test(value)

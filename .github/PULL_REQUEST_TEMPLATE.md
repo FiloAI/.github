@@ -39,4 +39,4 @@
 <!-- filoai:product-disposition finding=<stable-id> action=withdraw head=<40位当前head SHA> -->
 ```
 
-marker 的发布者由 GitHub 账号确定，不能写在正文里冒充；自由文本只能供人阅读，不能构成授权证据。格式错误、finding 不存在、权限不符或 head 过期都会保持阻塞。
+finding marker 只能放在正式 review 或 inline review comment 中；marker 的发布者由 GitHub 账号确定，不能写在正文里冒充；owner 作者的显式 `defer` 视为其自身产品决定。自由文本只能供人阅读，不能构成授权证据。格式错误、finding 不存在、权限不符或 head 过期都会保持阻塞。

@@ -13,8 +13,8 @@ const finding = productFindingMarker({ id: 'auth-timeout', severity: 'P1', kind:
 const defer = productDispositionMarker({ finding: 'auth-timeout', action: 'defer' })
 const accept = productDispositionMarker({ finding: 'auth-timeout', action: 'accept-deferral' })
 
-function event(login, body, created_at = '2026-08-26T00:00:00Z') {
-  return { login, body, created_at }
+function event(login, body, created_at = '2026-08-26T00:00:00Z', source = 'review') {
+  return { login, body, created_at, source }
 }
 
 test('没有结构化 finding 时通过；自由文本不构成放行或阻塞证据', () => {
@@ -138,6 +138,43 @@ test('作者不能自己创建 finding 后自己接受延期', () => {
   })
   assert.equal(result.satisfied, false)
   assert.match(result.reason, /非作者 reviewer\/bot/)
+})
+
+test('普通 issue comment 不能创建授权 finding', () => {
+  const result = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'alice',
+    events: [
+      event('review-bot', finding, '2026-08-26T00:00:00Z', 'issue-comment'),
+      event('alice', defer, '2026-08-26T00:01:00Z', 'issue-comment'),
+      event('review-bot', accept, '2026-08-26T00:02:00Z', 'issue-comment'),
+    ],
+  })
+  assert.equal(result.satisfied, false)
+  assert.match(result.reason, /必须来自 GitHub review/)
+})
+
+test('owner 作者的显式 defer 视为自身产品决定；撤回后仍然失效', () => {
+  const accepted = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'zqchris',
+    events: [
+      event('review-bot', finding, '2026-08-26T00:00:00Z'),
+      event('zqchris', defer, '2026-08-26T00:01:00Z'),
+    ],
+  })
+  assert.equal(accepted.satisfied, true)
+
+  const withdrawn = evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'zqchris',
+    events: [
+      event('review-bot', finding, '2026-08-26T00:00:00Z'),
+      event('zqchris', defer, '2026-08-26T00:01:00Z'),
+      event('zqchris', productDispositionMarker({ finding: 'auth-timeout', action: 'withdraw', head }), '2026-08-26T00:02:00Z'),
+    ],
+  })
+  assert.equal(withdrawn.satisfied, false)
 })
 
 test('编辑旧评论不能插入 marker 倒签授权事件', () => {

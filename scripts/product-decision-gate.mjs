@@ -157,6 +157,7 @@ export function evaluateProductDecisionGate({
   }
   const author = normalizeLogin(authorLogin)
   const owners = new Set([...ownerLogins].map(normalizeLogin))
+  const authorIsOwner = owners.has(author)
   const markers = parseProductDecisionMarkers(events)
   const invalid = markers.find((marker) => !marker.valid)
   if (invalid) {
@@ -185,6 +186,9 @@ export function evaluateProductDecisionGate({
     if (!finding.actor || finding.actor === author) {
       return blocked(`finding=${finding.id} 必须由非作者 reviewer/bot 创建，PR 作者不能给自己创建授权 finding`, { markers })
     }
+    if (!['review', 'review-comment'].includes(finding.event?.source)) {
+      return blocked(`finding=${finding.id} 必须来自 GitHub review 或 inline review comment，普通 issue comment 不能创建授权 finding`, { markers })
+    }
     const history = dispositions
       .filter((item) => item.findingId === finding.id)
       .sort((left, right) => eventTime(left) - eventTime(right))
@@ -203,7 +207,7 @@ export function evaluateProductDecisionGate({
           return blocked(`finding=${finding.id} 的 defer 只能由 PR 作者发布（实际为 ${item.actor || 'unknown'}）`, { markers })
         }
         deferred = true
-        authorized = null
+        authorized = authorIsOwner ? item : null
         continue
       }
       if (item.action === 'accept-deferral') {

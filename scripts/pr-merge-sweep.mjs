@@ -2,7 +2,7 @@
 // FiloAI owner 侧 PR 合并 sweep
 //
 // 背景：2026-08-05 起全组织停用仓库侧 bot 自动合并；合并由 owner 权限的人
-// （zqchris / jerboy 等）的定时 agent 执行本脚本完成。设计对齐 cindy MagicLizi：
+// （zqchris / jerboy / GaoWeiLiuXD 等）的定时 agent 执行本脚本完成。设计对齐 cindy MagicLizi：
 // 确定性门禁全过才合并；不使用规模、作者、产品方向或 reviewer 缺席等主观分类。
 //
 // 用法：
@@ -46,6 +46,7 @@ import {
   buildMergeStatusComment,
   buildMergeStatusCommentArgs,
   MERGE_STATUS_MARKER,
+  shouldPublishMergeStatus,
 } from './merge-status-comment.mjs'
 import {
   buildMergeArgs,
@@ -55,6 +56,13 @@ import {
 } from './merge-execution-policy.mjs'
 import { evaluateRequiredChecks, evaluateStrictPolicy } from './required-check-gate.mjs'
 import { evaluateReviewEvidence } from './review-evidence-gate.mjs'
+import {
+  consumeCiBridgeEvents,
+  bridgeEntriesFor,
+  formatCiBridgeEvent,
+  appendCiBridgeReason,
+  readCiBridge,
+} from './ci-mainline-bridge.mjs'
 
 const DRY_RUN = process.argv.includes('--dry-run')
 const repoArgIdx = process.argv.indexOf('--repo')
@@ -81,6 +89,22 @@ if (!DRY_RUN && ONLY_PR === null) {
   process.exit(1)
 }
 
+// PR 总管发现的 CI 红灯通过本机 bridge 交给主线合并管家；live GitHub
+// 门禁仍是唯一事实源。bridge 只负责让本轮优先看到当前 head 的失败事实。
+const ciBridge = readCiBridge()
+const ciBridgeEntries = bridgeEntriesFor(ONLY_REPO, ciBridge)
+  .filter((event) => ONLY_PR === null || Number(event.pr) === ONLY_PR)
+const ciBridgeByPr = new Map(ciBridgeEntries.map((event) => [`${event.repo}#${event.pr}`, event]))
+const newCiBridgeEntries = DRY_RUN
+  ? consumeCiBridgeEvents({ bridge: { ...ciBridge, events: Object.fromEntries(
+    ciBridgeEntries.map((event) => [`${event.repo}#${event.pr}`, event]),
+  ) } })
+  : []
+if (DRY_RUN && newCiBridgeEntries.length) {
+  console.log('CI bridge（来自 PR 总管，仍以 live GitHub 为准）：')
+  for (const event of newCiBridgeEntries) console.log(`- ${formatCiBridgeEvent(event)}`)
+}
+
 // 仓库 → 允许 sweep 合并的 base 分支。
 // 2026-08-05 晚起全组织 main-only：main 是唯一长期分支，正式版打 tag 发布
 //（服务器/官网 prod-v*，客户端 <platform>-v*）。历史 dev/prod 分支已冻结。
@@ -92,7 +116,7 @@ const REPO_BASES = {
   'FiloAI/filo-issue-bot': ['main'], // 反馈分诊 bot
 }
 const REPOS = Object.keys(REPO_BASES)
-const TRUSTED_STEWARD_LOGINS = ['zqchris', 'jerboy']
+const TRUSTED_STEWARD_LOGINS = ['zqchris', 'jerboy', 'GaoWeiLiuXD']
 
 function gh(args, opts = {}) {
   return execFileSync('gh', args, { encoding: 'utf8', ...opts })
@@ -418,22 +442,40 @@ function readMergeOutcome(repo, prNumber) {
 }
 
 function evaluateCandidate(repo, pr) {
-  if (pr.isDraft) return { satisfied: false, reason: 'draft' }
+  const structuralReasons = []
+  if (pr.isDraft) structuralReasons.push('draft')
   if (!REPO_BASES[repo].includes(pr.baseRefName)) {
-    return { satisfied: false, reason: `base=${pr.baseRefName} 不在允许列表 [${REPO_BASES[repo]}]` }
+    structuralReasons.push(`base=${pr.baseRefName} 不在允许列表 [${REPO_BASES[repo]}]`)
   }
   const labelGate = evaluateMergeLabels(pr.labels)
-  if (!labelGate.satisfied) return labelGate
+  if (!labelGate.satisfied) structuralReasons.push(labelGate.reason)
   if (pr.mergeable !== 'MERGEABLE') {
-    return { satisfied: false, reason: `mergeable=${pr.mergeable}` }
+    structuralReasons.push(`mergeable=${pr.mergeable}`)
+  }
+  if (structuralReasons.length) {
+    return {
+      satisfied: false,
+      reasons: structuralReasons,
+      reason: structuralReasons.join('；'),
+    }
   }
 
   const requiredGate = requiredChecksGate(repo, pr)
-  if (!requiredGate.satisfied) return { satisfied: false, reason: requiredGate.reason }
+  const deterministicReasons = []
+  if (!requiredGate.satisfied) deterministicReasons.push(requiredGate.reason)
   const isBot = pr.author?.is_bot || /\[bot\]$/.test(pr.author?.login ?? '')
   const unresolved = unresolvedThreads(repo, pr.number)
   if (unresolved > 0) {
-    return { satisfied: false, reason: `${unresolved} 个未解决 review thread` }
+    deterministicReasons.push(`${unresolved} 个未解决 review thread`)
+  }
+  if (deterministicReasons.length) {
+    return {
+      satisfied: false,
+      reasons: deterministicReasons,
+      reason: deterministicReasons.join('；'),
+      requiredGate,
+      isBot,
+    }
   }
   const blockerGate = manualBlockerGate(repo, pr)
   if (!blockerGate.satisfied) return blockerGate
@@ -477,12 +519,18 @@ for (const repo of REPOS) {
   for (const listedPr of prs) {
     let pr = listedPr
     const tag = `[${repo}#${listedPr.number}]`
-    const skip = (why) => {
+    const skip = (why, { liveCiFailed = false } = {}) => {
       totalSkipped++
-      console.log(`${tag} SKIP: ${why} — ${pr.title || listedPr.title}`)
-      if (PUBLISH_STATUS) {
+      const publishedWhy = appendCiBridgeReason(
+        why,
+        ciBridgeByPr.get(`${repo}#${pr.number}`),
+        pr.headRefOid,
+        { liveCiFailed },
+      )
+      console.log(`${tag} SKIP: ${publishedWhy} — ${pr.title || listedPr.title}`)
+      if (shouldPublishMergeStatus(PUBLISH_STATUS)) {
         try {
-          const changed = replyMergeStatus(repo, pr, why)
+          const changed = replyMergeStatus(repo, pr, publishedWhy)
           console.log(`${tag} STATUS ${changed ? 'PUBLISHED' : 'UNCHANGED'}`)
         } catch (commentError) {
           console.log(`${tag} STATUS PUBLISH FAILED: ${String(commentError.message || commentError).slice(0, 200)}`)
@@ -504,6 +552,7 @@ for (const repo of REPOS) {
     }
     const candidate = evaluateCandidate(repo, pr)
     if (!candidate.satisfied) {
+      const liveCiFailed = /^required checks 未通过:/i.test(candidate.requiredGate?.reason || '')
       if (candidate.needsOwnerReview && PUBLISH_STATUS) {
         try {
           requestHighRiskReview(repo, pr, candidate.reason)
@@ -515,7 +564,7 @@ for (const repo of REPOS) {
       if (candidate.readyForReview && DRY_RUN) {
         totalSkipped++
         console.log(`${tag} READY FOR REVIEW head=${pr.headRefOid} — ${pr.title}`)
-        if (PUBLISH_STATUS) {
+        if (shouldPublishMergeStatus(PUBLISH_STATUS)) {
           try {
             const changed = replyMergeStatus(repo, pr, candidate.reason, { state: 'ready' })
             console.log(`${tag} STATUS ${changed ? 'PUBLISHED' : 'UNCHANGED'}`)
@@ -525,7 +574,7 @@ for (const repo of REPOS) {
         }
         continue
       }
-      skip(candidate.reason)
+      skip(candidate.reason, { liveCiFailed })
       continue
     }
     const { isBot } = candidate
@@ -577,6 +626,19 @@ for (const repo of REPOS) {
         throw new Error(`合并命令返回但 live state=${mergedPr.state} queue=${Boolean(mergedPr.isInMergeQueue)}`)
       }
       console.log(`${tag} MERGED (${method}) commit=${mergedPr.mergeCommit?.oid || 'unknown'} — ${pr.title}`)
+      if (shouldPublishMergeStatus(PUBLISH_STATUS)) {
+        try {
+          const changed = replyMergeStatus(
+            repo,
+            pr,
+            `GitHub 已确认 state=MERGED，merge commit=${mergedPr.mergeCommit?.oid || 'unknown'}`,
+            { state: 'merged' },
+          )
+          console.log(`${tag} STATUS ${changed ? 'CLOSED' : 'UNCHANGED'}`)
+        } catch (statusError) {
+          console.log(`${tag} STATUS CLOSE FAILED: ${String(statusError.message || statusError).slice(0, 200)}`)
+        }
+      }
       totalMerged++
     } catch (e) {
       const reason = String(e.message || e).slice(0, 200)

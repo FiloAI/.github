@@ -1,5 +1,5 @@
 const REVIEW_PERMISSIONS = new Set(['admin', 'maintain', 'write'])
-const OWNER_VETO_LOGINS = new Set(['zqchris', 'xd-bobo'])
+const OWNER_VETO_LOGINS = new Set(['zqchris', 'jerboy', 'gaoweiliuxd'])
 
 const BLOCK_PATTERNS = [
   /(?:当前|现在|暂时)?(?:不宜|不应|不能|不可|不要|先别|暂不|禁止)[^。！？!\n]{0,24}(?:合并|merge)/i,

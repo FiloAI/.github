@@ -216,6 +216,30 @@ test('明确绑定 finding 或产品取舍的 non-blocking 说明仍可接受', 
   }
 })
 
+test('仅限 CI 或测试的 non-blocking 说明不能接受产品取舍', () => {
+  for (const reviewerReply of [
+    'This finding is non-blocking in CI only.',
+    'This finding is non-blocking in CI.',
+    'The proposed deferral is not a blocker for tests only.',
+    'This product trade-off is non-blocking only in CI.',
+    'This separate concern is non-blocking only if CI passes.',
+    'The current scope decision is non-blocking. In CI only.',
+    'The current scope decision is non-blocking. Subject to the CI check.',
+    '这个产品取舍不阻塞，仅限 CI。',
+    '当前 finding 属于非阻塞，但只针对测试。',
+    '这个延期决定不阻塞，但前提是 CI 通过。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, false, reviewerReply)
+  }
+})
+
 test('reviewer 明确否定接受时不能因关键词误放行', () => {
   for (const reviewerReply of [
     '我不同意，这仍然阻塞合并。',
@@ -330,6 +354,9 @@ test('reviewer 只撤回阻止时仍可构成明确接受', () => {
   for (const reviewerReply of [
     '我撤回阻止，这个问题可以另开处理。',
     'I withdraw the blocker; accepted as a separate concern.',
+    'I have withdrawn the blocker; non-blocking.',
+    'We retract the objection.',
+    '我们已收回异议。',
   ]) {
     assert.equal(evaluateProductDecisionGate({
       headOid: head,
@@ -339,6 +366,27 @@ test('reviewer 只撤回阻止时仍可构成明确接受', () => {
         reviewerReply,
       })],
     }).satisfied, true, reviewerReply)
+  }
+})
+
+test('reviewer 仅表示愿意或可能撤回时不能当作已经撤回', () => {
+  for (const reviewerReply of [
+    'I do not refuse to withdraw the blocker.',
+    'I am willing to withdraw the blocker.',
+    'I may withdraw the blocker.',
+    'We are ready to retract the objection.',
+    '我不拒绝撤回阻止。',
+    '我愿意撤回阻止。',
+    '我可能收回异议。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: '超出本 PR 范围，不改。',
+        reviewerReply,
+      })],
+    }).satisfied, false, reviewerReply)
   }
 })
 
@@ -483,6 +531,52 @@ test('reviewer 未来时态明确不撤回 blocker 时继续阻塞', () => {
         reviewerReply,
       })],
     }).satisfied, false, reviewerReply)
+  }
+})
+
+test('reviewer 明确拒绝撤回 blocker 时继续阻塞', () => {
+  for (const reviewerReply of [
+    'I refuse to withdraw the blocker.',
+    'I declined to retract the objection.',
+    'We have refused to withdraw the request for changes.',
+    "I've declined to retract the concern.",
+    'I am refusing to withdraw the blocker.',
+    'I am unwilling to withdraw the blocker.',
+    'We are not willing to retract the objection.',
+    '我拒绝撤回阻止。',
+    '我不愿收回异议。',
+    '我不愿意撤回阻塞。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, false, reviewerReply)
+  }
+})
+
+test('reviewer 后续肯定撤回可覆盖较早的明确拒绝', () => {
+  for (const reviewerReply of [
+    'I refuse to withdraw the blocker.',
+    'I am unwilling to retract the objection.',
+    '我拒绝撤回阻止。',
+  ]) {
+    const candidate = thread({
+      authorReply: 'Out of scope; defer to a follow-up PR.',
+      reviewerReply,
+    })
+    candidate.comments.push({
+      login: 'codex', body: 'I have withdrawn the blocker; accepted as a separate concern.',
+      created_at: '2026-08-25T03:03:00Z',
+    })
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [candidate],
+    }).satisfied, true, reviewerReply)
   }
 })
 

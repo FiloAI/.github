@@ -2,7 +2,7 @@
 // FiloAI owner 侧 PR 合并 sweep
 //
 // 背景：2026-08-05 起全组织停用仓库侧 bot 自动合并；合并由 owner 权限的人
-// （zqchris / jerboy 等）的定时 agent 执行本脚本完成。设计对齐 cindy MagicLizi：
+// （zqchris / jerboy / GaoWeiLiuXD 等）的定时 agent 执行本脚本完成。设计对齐 cindy MagicLizi：
 // 确定性门禁全过才合并；不使用规模、作者、产品方向或 reviewer 缺席等主观分类。
 //
 // 用法：
@@ -115,7 +115,7 @@ const REPO_BASES = {
   'FiloAI/filo-issue-bot': ['main'], // 反馈分诊 bot
 }
 const REPOS = Object.keys(REPO_BASES)
-const TRUSTED_STEWARD_LOGINS = ['zqchris', 'jerboy']
+const TRUSTED_STEWARD_LOGINS = ['zqchris', 'jerboy', 'GaoWeiLiuXD']
 
 function gh(args, opts = {}) {
   return execFileSync('gh', args, { encoding: 'utf8', ...opts })

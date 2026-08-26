@@ -1,5 +1,5 @@
 // FiloAI 组织身份：jerboy 是 Cindy 中的 Bobo 在 FiloAI 使用的 GitHub 账号。
-const OWNER_LOGINS = new Set(['zqchris', 'jerboy'])
+const OWNER_LOGINS = new Set(['zqchris', 'jerboy', 'gaoweiliuxd'])
 
 const EXPLICIT_RISK_LABELS = new Set([
   'needs-owner-review',
@@ -85,7 +85,7 @@ export function evaluateHighRiskApproval({
 
   return {
     satisfied: false,
-    reason: `高风险改动待 Chris 或 jerboy 确认当前 head（${riskReason}）`,
+    reason: `高风险改动待 FiloAI owner（zqchris、jerboy 或 GaoWeiLiuXD）确认当前 head（${riskReason}）`,
     evidence: null,
     needsOwnerReview: true,
   }

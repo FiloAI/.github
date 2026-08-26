@@ -15,8 +15,8 @@ test('外部机器人风险评论不构成真人阻止', () => {
   }).satisfied, true)
 })
 
-test('Chris 或 jerboy 的明确 veto 不受仓库 collaborator 权限字段影响', () => {
-  for (const login of ['zqchris', 'jerboy']) {
+test('FiloAI owner 的明确 veto 不受仓库 collaborator 权限字段影响', () => {
+  for (const login of ['zqchris', 'jerboy', 'GaoWeiLiuXD']) {
     const result = evaluateManualBlockers({
       headOid,
       comments: [{

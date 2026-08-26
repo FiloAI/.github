@@ -68,8 +68,8 @@ export function humanizeMergeReason(reason, { state = 'blocked' } = {}) {
       actions.push('作者通常不用操作；合并管家会继续安排/执行当前 head 的审核，不会因为一次提示就停止。')
     } else if (/高风险改动待/i.test(clause)) {
       summaries.push(`这是高风险改动，${clause.replace(/^高风险改动待\s*/i, '')}。`)
-      actions.push('请 Chris 或 jerboy 针对当前 head 确认；确认后管家会自动复查。')
-      owner = 'Chris 或 jerboy'
+      actions.push('请 FiloAI owner（zqchris、jerboy 或 GaoWeiLiuXD）针对当前 head 确认；确认后管家会自动复查。')
+      owner = 'FiloAI owner（zqchris / jerboy / GaoWeiLiuXD）'
     } else if (/成员明确阻止/i.test(clause)) {
       summaries.push(`有具备权限的成员明确阻止合并：${clause.replace(/^成员明确阻止检查失败（fail-closed）：?/i, '')}`)
       actions.push('请该成员针对当前 head 明确放行，或由 PR 作者处理其指出的问题；之后管家会自动复查。')

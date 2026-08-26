@@ -106,6 +106,9 @@ const REVIEWER_WITHDRAWAL_REFUSAL_PATTERN =
 const REVIEWER_ACCEPTANCE_UNCERTAINTY_PATTERN =
   /[?？]|(?:是否(?:可以)?|是不是|能否|可否|能不能|可不可以|要不要)[^。！？!?\n]{0,32}(?:接受|同意|另开|单独处理|不阻塞|非阻塞)|(?:吗|么|呢|吧)(?:$|[\s。！？!?，,；;])|\b(?:can|could|would|should|may|might|will|do|does|did)\s+(?!(?:not|never)\b)(?:i|we|you|they|he|she|maintainers?|reviewers?|the\s+team|(?:the\s+)?@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,2})\s+(?:accept|agree|consider|regard|treat)\b|\b(?:are|is)\s+(?:i|we|you|they|he|she|maintainers?|reviewers?|the\s+team|(?:the\s+)?@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,2})\s+(?:(?:accept|agree|consider|regard|treat)ing|(?:willing|able|ready|prepared)\s+to\s+(?:accept|agree|consider|regard|treat))\b|\bwhether\s+(?:i|we|you|they|he|she|maintainers?|reviewers?|the\s+team|(?:the\s+)?@?[a-z][\w.-]*(?:\s+[a-z][\w.-]*){0,2})\s+(?:accept|agree|consider|regard|treat)s?\b|\b(?:i|we)\s+(?:could|would|may|might)\s+(?:accept|agree|consider|regard|treat)\b|\b(?:maybe|perhaps|possibly)\b[^.。！？!?\n]{0,40}\b(?:accept|agree|consider|regard|treat)\b/i
 
+const REVIEWER_PROSPECTIVE_ACCEPTANCE_PATTERN =
+  /(?:我|我们)(?:目前|现在)?\s*(?:计划|打算|希望|期望|预计|准备|想要|将(?:会)?|会(?:在[^。！？!?；;\n]{0,16})?|以后会|之后会|届时会)[^。！？!?；;\n]{0,48}(?:接受|同意|确认|核实|撤回|收回|支持|赞成|不再阻塞|不阻塞|非阻塞)|\b(?:i|we)\s+(?:(?:plan|intend|hope|expect|aim|wish|want)\b|(?:am|are)\s+(?:planning|intending|hoping|expecting|aiming|wishing)\b|(?:will|shall)\s+(?!(?:not|never)\b)|(?:am|are)\s+going\s+to\b|would\s+like\s+to\b)[^.。！？!?；;\n]{0,64}\b(?:accept|agree|confirm|verify|withdraw|retract|support|endorse|non-?blocking|not\s+a\s+blocker)\b/i
+
 const FINDING_FIXED_PATTERN =
   /(?:已|已经)(?:修复|处理|解决|改好)|(?:已|已经)?补(?:上|了)?(?:回归)?测试|\b(?:fixed|addressed|resolved|implemented)(?:\s+this|\s+it|\s+the\s+(?:issue|finding))?\b/i
 
@@ -317,6 +320,10 @@ function latestReviewerTextDisposition(body) {
     const hasTrailingNonBlockingLimitation = REVIEWER_SCOPED_NON_BLOCKING_ACCEPTANCE_PATTERN.test(part)
       && REVIEWER_NON_BLOCKING_LIMITATION_FRAGMENT_PATTERN.test(parts[index + 1] || '')
     const acceptanceKind = reviewerAcceptanceKindForPart(part, hasTrailingNonBlockingLimitation)
+    if (acceptanceKind && REVIEWER_PROSPECTIVE_ACCEPTANCE_PATTERN.test(part)) {
+      latest = { disposition: 'pending', acceptanceKind: null, evidence: part }
+      continue
+    }
     if (acceptanceKind) latest = { disposition: 'accept', acceptanceKind, evidence: part }
   }
   return latest
@@ -359,7 +366,7 @@ function reviewerDispositionTime(comment) {
   if (!hasSemanticDispositionEdit(comment, reviewerDispositionKind)) {
     return dispositionTime(comment)
   }
-  if (reviewerDispositionKind(comment.body) === 'reject') return commentTime(comment)
+  if (reviewerDispositionKind(comment.body) !== 'accept') return commentTime(comment)
   const currentAcceptance = reviewerAcceptanceKind(comment.body)
   const provesFreshAcceptance = comment?.edits_complete !== false
     && editEntries(comment).some((entry) => {
@@ -537,9 +544,11 @@ function latestDisposition(dispositions) {
   if (candidates.length === 1) return candidates[0].disposition
 
   // A semantic edit and another event sharing GitHub's second-level timestamp
-  // have no provable cross-event order. Preserve an explicit rejection.
+  // have no provable cross-event order. Preserve explicit non-acceptance.
   if (candidates.some((item) => item.semanticEdit)
-    && candidates.some((item) => item.disposition === 'reject')) return 'reject'
+    && candidates.some((item) => item.disposition !== 'accept')) {
+    return candidates.some((item) => item.disposition === 'reject') ? 'reject' : 'pending'
+  }
 
   const reviewOrders = candidates.map((item) => item.reviewOrder)
   if (reviewOrders.every(Number.isSafeInteger) && reviewOrders.every((order) => order >= 0)) {
@@ -549,13 +558,15 @@ function latestDisposition(dispositions) {
     if (latestReview.every((item) => item.source === 'thread')) {
       return latestReview.sort((left, right) => left.index - right.index).at(-1).disposition
     }
-    return latestReview.some((item) => item.disposition === 'reject') ? 'reject' : 'accept'
+    if (latestReview.some((item) => item.disposition === 'reject')) return 'reject'
+    return latestReview.some((item) => item.disposition === 'pending') ? 'pending' : 'accept'
   }
 
   if (candidates.every((item) => item.source === candidates[0].source)) {
     return candidates.sort((left, right) => left.index - right.index).at(-1).disposition
   }
-  return candidates.some((item) => item.disposition === 'reject') ? 'reject' : 'accept'
+  if (candidates.some((item) => item.disposition === 'reject')) return 'reject'
+  return candidates.some((item) => item.disposition === 'pending') ? 'pending' : 'accept'
 }
 
 function latestAuthorDisposition(events) {
@@ -615,10 +626,11 @@ function latestReviewerDisposition({
     if (String(comment.login || '').toLowerCase() !== reviewerLogin) continue
     const semanticEdit = hasSemanticDispositionEdit(comment, reviewerDispositionKind)
     const at = reviewerDispositionTime(comment)
-    if (reviewerDispositionKind(comment.body) === 'reject') {
+    const textDisposition = reviewerDispositionKind(comment.body)
+    if (textDisposition && textDisposition !== 'accept') {
       if (at >= originalBoundary) {
         dispositions.push({
-          disposition: 'reject', at,
+          disposition: textDisposition, at,
           source: 'thread',
           reviewOrder: threadReviewOrder(comment, at),
           index,

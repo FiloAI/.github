@@ -2785,6 +2785,109 @@ test('疑问式或不确定式 acceptance 不是 reviewer 明确放行', () => {
   }
 })
 
+test('未来、计划或愿望式 acceptance 不是 reviewer 当前放行', () => {
+  for (const reviewerReply of [
+    'I plan to accept this deferral.',
+    'I intend to agree to this scope decision.',
+    'I hope to accept this deferral.',
+    'I expect to agree to this trade-off.',
+    'I am planning to accept this as a separate concern.',
+    'We are going to accept this deferral.',
+    'I will accept this deferral tomorrow.',
+    'I will gladly accept this deferral tomorrow.',
+    'We shall eventually agree to this scope decision.',
+    'I plan to confirm this is fixed.',
+    'I hope to support treating this as a separate concern.',
+    'I would like to accept this deferral.',
+    '我计划接受这个延期。',
+    '我们打算同意这个产品取舍。',
+    '我希望接受这个延期并单独处理。',
+    '我们将会同意这个范围决定。',
+    '我希望这个 finding 不再阻塞。',
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, false, reviewerReply)
+  }
+})
+
+test('reviewer acceptance 以最新已发生的 disposition 为准', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'Accepted as a separate concern.',
+  })
+  candidate.comments.push({
+    login: 'codex', body: 'I plan to accept this deferral after the release.',
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'I accept this deferral now.',
+    created_at: '2026-08-25T03:04:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
+test('同一回复中未来式与明确当前 acceptance 按分句顺序生效', () => {
+  for (const [reviewerReply, satisfied] of [
+    ['I plan to accept this deferral. I accept this deferral now.', true],
+    ['I accept this deferral now. I plan to accept this deferral after release.', false],
+    ['我计划接受这个延期。现在我明确接受这个延期。', true],
+    ['现在我明确接受这个延期。我之后会接受这个延期。', false],
+  ]) {
+    assert.equal(evaluateProductDecisionGate({
+      headOid: head,
+      authorLogin: 'author',
+      threads: [thread({
+        authorReply: 'Out of scope; defer to a follow-up PR.',
+        reviewerReply,
+      })],
+    }).satisfied, satisfied, reviewerReply)
+  }
+})
+
+test('prospective acceptance 编辑为明确接受后才形成新证据', () => {
+  const candidate = thread({ authorReply: 'Out of scope; defer to a follow-up PR.' })
+  candidate.comments.push({
+    login: 'codex', body: 'I plan to accept this deferral.',
+    created_at: '2026-08-25T03:02:00Z', updated_at: '2026-08-25T03:02:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments[2] = {
+    login: 'codex', body: 'I accept this deferral now.',
+    created_at: '2026-08-25T03:02:00Z', updated_at: '2026-08-25T03:03:00Z',
+    edits: [
+      { edited_at: '2026-08-25T03:02:00Z', body: 'I plan to accept this deferral.' },
+      { edited_at: '2026-08-25T03:03:00Z', body: 'I accept this deferral now.' },
+    ],
+    edits_complete: true,
+  }
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
+})
+
 test('中文明确接受产品取舍仍可放行', () => {
   for (const reviewerReply of [
     '接受这个延期并单独处理。',

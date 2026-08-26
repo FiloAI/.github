@@ -605,6 +605,17 @@ for (const repo of REPOS) {
         throw new Error(`合并命令返回但 live state=${mergedPr.state} queue=${Boolean(mergedPr.isInMergeQueue)}`)
       }
       console.log(`${tag} MERGED (${method}) commit=${mergedPr.mergeCommit?.oid || 'unknown'} — ${pr.title}`)
+      try {
+        const changed = replyMergeStatus(
+          repo,
+          pr,
+          `GitHub 已确认 state=MERGED，merge commit=${mergedPr.mergeCommit?.oid || 'unknown'}`,
+          { state: 'merged' },
+        )
+        console.log(`${tag} STATUS ${changed ? 'CLOSED' : 'UNCHANGED'}`)
+      } catch (statusError) {
+        console.log(`${tag} STATUS CLOSE FAILED: ${String(statusError.message || statusError).slice(0, 200)}`)
+      }
       totalMerged++
     } catch (e) {
       const reason = String(e.message || e).slice(0, 200)

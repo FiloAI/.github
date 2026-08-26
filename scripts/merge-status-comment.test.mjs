@@ -37,3 +37,14 @@ test('状态评论首次创建，后续更新同一条评论', () => {
     'api', 'repos/FiloAI/filoai-frontend/issues/comments/42', '--method', 'PATCH', '-f', 'body=status',
   ])
 })
+
+test('合并后状态评论明确收口，不再显示等待审核', () => {
+  const body = buildMergeStatusComment({
+    headOid: 'b'.repeat(40),
+    reason: 'GitHub 已确认 state=MERGED，merge commit=c'.repeat(1),
+    state: 'merged',
+  })
+  assert.match(body, /合并管家：已合并/)
+  assert.match(body, /不再表示阻塞/)
+  assert.doesNotMatch(body, /等待当前 head 审核/)
+})

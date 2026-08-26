@@ -226,6 +226,18 @@ test('reviewer 明确否定接受时不能因关键词误放行', () => {
     'I would not be comfortable treating this as a separate concern.',
     'I would only be comfortable treating this as a separate concern if the owner approves.',
     'I am comfortable treating this as a separate concern only if the owner approves.',
+    'I do not support treating this as a separate concern.',
+    "I can't support handling this as a separate concern.",
+    'We do not currently support treating this as a separate concern.',
+    'We do not yet support treating this as a separate concern.',
+    'I cannot continue to support handling this as a separate concern.',
+    'I no longer support treating this as a separate concern.',
+    'I am unable to support handling this as a separate concern.',
+    'I support not treating this as a separate concern.',
+    'We endorse the proposal not to handle this as a separate concern.',
+    '我不支持把它作为独立问题处理。',
+    '我不再支持把它作为独立问题处理。',
+    '我支持不要把它作为独立问题处理。',
     'I would only accept this as a separate concern if the owner approves.',
     'I can accept this as a separate concern only if the migration lands.',
     'I accept this as a separate concern subject to owner approval.',
@@ -287,6 +299,9 @@ test('reviewer 带 willing 或 ready 的肯定接受仍可放行', () => {
     'I am not uncomfortable treating this as a separate concern.',
     'I would be comfortable treating this as a separate concern if useful.',
     'I am comfortable treating this as a separate concern if helpful.',
+    'I support treating this as a separate concern.',
+    'We endorse handling this as a separate concern.',
+    '我支持把它作为独立问题处理。',
     'I accept this as a separate concern and can file a follow-up if useful.',
     'I agree to this deferral; I can add more detail later if needed.',
   ]) {
@@ -496,6 +511,32 @@ test('reviewer 最新相关 disposition 覆盖较早接受', () => {
       },
     ],
   }).satisfied, false)
+})
+
+test('reviewer 后续否定 support 覆盖较早 acceptance，后续明确支持可再放行', () => {
+  const candidate = thread({
+    authorReply: 'Out of scope; defer to a follow-up PR.',
+    reviewerReply: 'Accepted as a separate concern.',
+  })
+  candidate.comments.push({
+    login: 'codex', body: "I can't support handling this as a separate concern.",
+    created_at: '2026-08-25T03:03:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, false)
+
+  candidate.comments.push({
+    login: 'codex', body: 'I support treating this as a separate concern.',
+    created_at: '2026-08-25T03:04:00Z',
+  })
+  assert.equal(evaluateProductDecisionGate({
+    headOid: head,
+    authorLogin: 'author',
+    threads: [candidate],
+  }).satisfied, true)
 })
 
 test('reviewer 把旧 acceptance 编辑为更新 rejection 时按有效编辑时间阻塞', () => {

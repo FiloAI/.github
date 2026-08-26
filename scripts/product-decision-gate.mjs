@@ -13,6 +13,9 @@ const PRODUCT_DEFERRAL_PATTERN =
 const PRESENT_PROGRESSIVE_NO_CHANGE_PATTERN =
   /\b(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+not\s+(?:changing\s+(?:(?:this|it)|the\s+(?:issue|finding|behavio(?:u)?r))(?=$|[.。！？!?,，;；:\n]|\s+(?:in|here|now|before|after|until|because)\b)|making\s+(?:(?:this|that|the\s+requested)\s+)?change(?=$|[.。！？!?,，;；:\n]|\s+(?:in|here|now|before|after|until|because)\b))/i
 
+const AUTHOR_PLANNED_NO_CHANGE_PATTERN =
+  /(?:我|我们)(?:(?:不会|不打算|不准备)|(?:没有|没|并无)\s*(?:计划|打算|意图))[^。！？!?,，;；:\n]{0,20}(?:修改\s*(?:这个|该|此)?\s*(?:行为|实现)|(?:实施|进行|作出)\s*(?:(?:这个|该|此)\s*)?(?:所要求的|请求的)?\s*(?:修改|改动|变更))(?=$|[.。！？!?,，;；:\n]|\s+(?:在本\s*PR|这里|现在|目前|合并前|因为))|\b(?:(?:i|we)\s+(?:(?:(?:will\s+not|won['’]t)\s+)|(?:(?:do|did)\s+not|don['’]t|didn['’]t)\s+(?:plan|intend)\s+to\s+|(?:have|had)\s+no\s+plans?\s+to\s+)|(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+not\s+going\s+to\s+)(?:change\s+(?:(?:this|it)|the\s+(?:behavio(?:u)?r|implementation))|(?:make|implement|apply|adopt)\s+(?:(?:this|that|the\s+requested)\s+)?changes?)(?=$|[.。！？!?,，;；:\n]|\s+(?:(?:in\s+(?:this\s+)?(?:pr|pull\s+request))|here|now|before|after|until|because)\b)/i
+
 const AUTHOR_EXPLICIT_REFUSAL_PATTERN =
   /\b(?:(?:i|we)\s+(?:refuse|decline)|(?:i\s+am|i['’]m|we\s+are|we['’]re)\s+(?:refusing|declining)|(?:i|we)\s+(?:have|had)\s+(?:refused|declined)|(?:i|we)['’]ve\s+(?:refused|declined))\s+(?:to\s+(?:(?:fix|address|resolve)\s+(?:(?:this|it)|the\s+(?:issue|finding|behavio(?:u)?r))|change\s+(?:(?:this|it)|the\s+(?:behavio(?:u)?r|implementation))|(?:make|implement)\s+(?:(?:this|that|the\s+requested|any)\s+changes?))|(?:this|that|the\s+requested)\s+changes?)(?=$|[.。！？!?,，;；:\n]|\s+(?:in|here|now|before|after|until|because)\b)/i
 
@@ -81,6 +84,9 @@ const REVIEWER_DEFERRAL_ACCEPTANCE_PATTERN =
 
 const REVIEWER_REJECTION_PATTERN =
   /(?:不接受|不同意|不理解|撤回(?:同意|接受|批准)|不再(?:同意|接受)|(?:不能|无法|不可|尚未|未能)\s*(?:确认|核实)[^。！？!?\n]{0,24}(?:已|已经)?(?:修复|处理|解决)|仍(?:然)?阻塞|还是阻塞|不能另开|不可另开|(?:不能|不可|不得)\s*单独处理|(?:不认为|不能认为|并非|不是)[^。！？!?\n]{0,24}(?:非阻塞|不阻塞)|(?:必须|需要|应该|应当)\s*在本\s*PR\s*(?:修复|处理|解决)|合并前(?:仍需|请|必须)?[^。！？!?\n]{0,24}(?:修复|处理|解决)|仍需修复)|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:accept|agree|withdraw|confirm|verify)\b|\b(?:i\s+am|i['’]m|we\s+are|we['’]re|(?:you|they)\s+are|(?:you|they)['’]re|(?:he|she)\s+is)\s+not\s+(?:accepting|agreeing)\b|\b(?:have|has|had)\s+not\s+(?:confirmed|verified)\b|\b(?:do\s+not|don't|cannot|can't|won't)\s+(?:consider|regard|treat|view)\b[^.。！？!?\n]{0,48}\bnon-?blocking\b|\b(?:is|are)\s+not\s+non-?blocking\b|\b(?:have|has|had)\s+not\s+(?:accepted|agreed)\b|\b(?:haven['’]t|hasn['’]t|hadn['’]t)\s+(?:accepted|agreed)\b|\bno\s+longer\s+(?:accept|agree)\b|\b(?:withdraw|retract)(?:ing|s|ed)?\s+(?:my|our|the|that)?\s*(?:acceptance|agreement|approval)\b|\b(?:is\s+not|isn't|not)\s+(?:a\s+)?separate\s+(?:concern|issue|pr)\b|\b(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+in\s+this\s+(?:pr|pull\s+request)\b|\b(?:please\s+)?(?:address|fix|resolve)\s+(?:it|this|the\s+(?:issue|finding))\s+before\s+(?:merge|merging)\b|\b(?:still|remains?)\s+(?:a\s+)?blocker\b|\b(?:still\s+needs?\s+(?:work|to\s+be\s+fixed)|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed)\b|\b(?:but|however)\b[^.。！？!?\n]{0,80}\b(?:still\s+needs?\s+to|needs?\s+to\s+be\s+fixed|must\s+be\s+fixed|before\s+merge|block(?:er|ing)?)\b/i
+
+const MANDATORY_REVIEWER_NON_ACCEPTANCE_PATTERN =
+  /(?:不得|不应|不能|必须不)\s*(?:接受|同意|批准|认可)|\b(?:(?:(?:i|we|you|they|reviewers?|maintainers?|the\s+team)\s+)?(?:(?:must|shall)\s+not|mustn['’]t|shan['’]t)\s+(?:accept|agree|approve|endorse)\b|(?:deferral|product\s+trade-?off|scope(?:\s+decision)?|separate\s+(?:concern|issue|pr))\b[^.。！？!?；;\n]{0,40}\b(?:(?:must|shall)\s+not|mustn['’]t|shan['’]t)\s+be\s+(?:accepted|approved|endorsed)\b|(?:it|this|that)\s+(?:(?:must|shall)\s+not|mustn['’]t|shan['’]t)\s+be\s+(?:accepted|approved|endorsed)\b[^.。！？!?；;\n]{0,40}\b(?:as\s+(?:a\s+)?(?:deferral|product\s+trade-?off|scope(?:\s+decision)?|separate\s+(?:concern|issue|pr))|(?:deferral|product\s+trade-?off|scope(?:\s+decision)?|separate\s+(?:concern|issue|pr)))\b)/i
 
 const QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN =
   /\b(?:(?:i\s+am|i['’]m|we\s+are|we['’]re|(?:you|they)\s+are|(?:you|they)['’]re|(?:he|she)\s+is)\s+(?:(?:currently|yet|still|now|at\s+this\s+time)\s+)?(?:unwilling|unable)\s+to\s+(?:accept|agree)|(?:i\s+am|i['’]m|we\s+are|we['’]re|(?:you|they)\s+are|(?:you|they)['’]re|(?:he|she)\s+is)\s+not\s+(?:(?:currently|yet|still|now|at\s+this\s+time)\s+)?(?:(?:willing|ready|prepared|able)\s+to\s+(?:accept|agree)|(?:accepting|agreeing)|in\s+(?:a\s+)?position\s+to\s+(?:accept|agree))|(?:do\s+not|don['’]t|cannot|can['’]t|will\s+not|won['’]t)\s+(?:(?:currently|yet|now|at\s+this\s+time)\s+)?(?:accept|agree))\b/i
@@ -389,6 +395,7 @@ function isExplicitReviewerRejection(body) {
       NEGATED_REVIEWER_SCOPED_NON_BLOCKING_REJECTION_PATTERN,
     )
     || NEGATED_REVIEWER_FIXED_CONFIRMATION_PATTERN.test(value)
+    || MANDATORY_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || QUALIFIED_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || PAST_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
     || INDIRECT_REVIEWER_NON_ACCEPTANCE_PATTERN.test(value)
@@ -499,6 +506,7 @@ function isProductDeferral(body) {
     .replace(NEGATED_INTENDED_BEHAVIOR_PATTERN, ' ')
   return PRODUCT_DEFERRAL_PATTERN.test(value)
     || PRESENT_PROGRESSIVE_NO_CHANGE_PATTERN.test(value)
+    || AUTHOR_PLANNED_NO_CHANGE_PATTERN.test(value)
     || AUTHOR_EXPLICIT_REFUSAL_PATTERN.test(value)
     || AUTHOR_DECISION_NO_FIX_PATTERN.test(value)
     || AUTHOR_INTENTION_NO_FIX_PATTERN.test(value)

@@ -33,8 +33,45 @@ test('review thread 分页会读取第 101 条之后的未解决意见', () => {
   assert.equal(result.length, 1)
   assert.equal(result[0].id, 'open-101')
   assert.equal(calls.length, 2)
+  assert.match(calls[0], /comments\(first: 1\)/)
+  assert.doesNotMatch(calls[0], /comments\(first: 1000\)/)
   assert.match(calls[1], /after: "cursor-1"/)
   assert.match(calls[1], /comments\(first: 1\)/)
+})
+
+test('分页游标缺失或重复时立刻失败，避免死循环', () => {
+  assert.throws(
+    () => readUnresolvedReviewThreads({
+      repo: 'FiloAI/FiloMailCenter',
+      prNumber: 653,
+      runGraphql: () => ({
+        data: { repository: { pullRequest: { reviewThreads: {
+          nodes: [],
+          pageInfo: { hasNextPage: true, endCursor: null },
+        } } } },
+      }),
+    }),
+    /分页游标无效/,
+  )
+
+  const calls = []
+  assert.throws(
+    () => readUnresolvedReviewThreads({
+      repo: 'FiloAI/FiloMailCenter',
+      prNumber: 653,
+      runGraphql: () => {
+        calls.push(true)
+        return {
+          data: { repository: { pullRequest: { reviewThreads: {
+            nodes: [],
+            pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
+          } } } },
+        }
+      },
+    }),
+    /分页游标无效/,
+  )
+  assert.equal(calls.length, 2)
 })
 
 test('阻塞原因包含作者需要看的位置、来源、级别和问题摘要', () => {

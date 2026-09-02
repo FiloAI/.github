@@ -14,7 +14,7 @@ test('高风险请求直接在 PR 点名 owner，并绑定当前 head', () => {
   const body = buildOwnerReviewRequest({ headOid: head, reason: 'path:auth/service.ts' })
   assert.ok(body.includes(OWNER_REVIEW_REQUEST_MARKER))
   assert.ok(body.includes(`owner-review-request-head=${head}`))
-  assert.match(body, /@zqchris @jerboy @GaoWeiLiuXD/)
+  assert.match(body, /@zqchris @jerboy @GaoWeiLiuXD @xuzini-xzn/)
   assert.match(body, /48a99f1/)
   assert.match(body, /不按 PR 行数触发/)
 })
@@ -27,6 +27,12 @@ test('同一条 owner 请求评论可幂等更新', () => {
   assert.deepEqual(buildOwnerReviewCommentArgs({ ...common, commentId: 42 }), [
     'api', 'repos/FiloAI/FiloMailCenter/issues/comments/42', '--method', 'PATCH', '-f', 'body=request',
   ])
+})
+
+test('通知名单排除 PR 作者，避免 @PR 作者', () => {
+  const body = buildOwnerReviewRequest({ headOid: head, reason: 'path:auth/service.ts', authorLogin: 'xuzini-xzn' })
+  assert.doesNotMatch(body, /@xuzini-xzn/)
+  assert.match(body, /@zqchris @jerboy @GaoWeiLiuXD/)
 })
 
 test('非 owner 作者正式 request Chris，FiloAI owner 自己是作者时不额外请求 owner', () => {

@@ -162,7 +162,11 @@ function replyMergeStatus(repo, pr, reason, { state = 'blocked' } = {}) {
 }
 
 function requestHighRiskReview(repo, pr, reason) {
-  const body = buildOwnerReviewRequest({ headOid: pr.headRefOid, reason })
+  const body = buildOwnerReviewRequest({
+    headOid: pr.headRefOid,
+    reason,
+    authorLogin: pr.author?.login || '',
+  })
   const comments = ghJsonPaginated([
     'api', `repos/${repo}/issues/${pr.number}/comments`,
   ])

@@ -14,9 +14,15 @@ test('高风险请求直接在 PR 点名 owner，并绑定当前 head', () => {
   const body = buildOwnerReviewRequest({ headOid: head, reason: 'path:auth/service.ts' })
   assert.ok(body.includes(OWNER_REVIEW_REQUEST_MARKER))
   assert.ok(body.includes(`owner-review-request-head=${head}`))
-  assert.match(body, /@zqchris @jerboy @GaoWeiLiuXD/)
+  assert.match(body, /@zqchris @jerboy @GaoWeiLiuXD @xuzini-xzn/)
   assert.match(body, /48a99f1/)
   assert.match(body, /不按 PR 行数触发/)
+})
+
+test('本合并管家的通知排除当前 PR 作者', () => {
+  const body = buildOwnerReviewRequest({ headOid: head, reason: 'path:auth/service.ts', authorLogin: 'xuzini-xzn' })
+  assert.doesNotMatch(body, /@xuzini-xzn/)
+  assert.match(body, /@zqchris @jerboy @GaoWeiLiuXD/)
 })
 
 test('同一条 owner 请求评论可幂等更新', () => {
